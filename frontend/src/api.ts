@@ -6,8 +6,8 @@ import type {
   ExperimentCancelledEvent,
   ExperimentCompletedEvent,
   ExperimentControlEvent,
-  ExperimentReportRequest,
   ExperimentMetricEvent,
+  ExperimentReportRequest,
   ExperimentRequest,
   ExperimentResult,
   ExperimentStartedEvent,
@@ -28,7 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    let message = `Request failed with status ${response.status}`
+    let message = `请求失败，状态码：${response.status}`
     try {
       const payload = await response.json()
       if (typeof payload.detail === 'string') {
@@ -94,7 +94,7 @@ export async function renderExperimentReport(payload: ExperimentReportRequest): 
   })
 
   if (!response.ok) {
-    let message = `Request failed with status ${response.status}`
+    let message = `请求失败，状态码：${response.status}`
     try {
       const data = await response.json()
       if (typeof data.detail === 'string') {
@@ -187,20 +187,20 @@ export function runExperimentStream(payload: ExperimentRequest, handlers: Stream
           socket.close()
           break
         case 'error':
-          fail(typeof data.message === 'string' ? data.message : JSON.stringify(data.message))
+          fail(typeof data.message === 'string' ? data.message : `请求参数校验失败：${JSON.stringify(data.message)}`)
           socket.close()
           break
       }
     }
 
     socket.onerror = () => {
-      fail('WebSocket connection error')
+      fail('WebSocket 连接错误')
       socket.close()
     }
 
     socket.onclose = () => {
       if (!completed && !settled) {
-        fail('Training stream closed before completion')
+        fail('训练流在完成前已关闭')
       }
     }
   })

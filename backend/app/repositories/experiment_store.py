@@ -112,7 +112,7 @@ class ExperimentStore:
             ).fetchone()
 
         if row is None:
-            raise FileNotFoundError(f"Experiment run not found: {run_id}")
+            raise FileNotFoundError(f"Experiment record not found: {run_id}")
 
         payload = json.loads(row["payload"])
         return ExperimentResult.model_validate(payload)

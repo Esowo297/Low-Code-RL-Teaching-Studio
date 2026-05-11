@@ -5,9 +5,9 @@ from app.api.routes import router
 
 
 app = FastAPI(
-    title="Low-Code RL Teaching Platform API",
+    title="低代码强化学习教学平台 API",
     version="0.1.0",
-    summary="Prototype backend for configurable reinforcement learning experiments.",
+    summary="面向可配置强化学习实验的原型后端服务。",
 )
 
 app.add_middleware(

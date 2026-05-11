@@ -46,7 +46,7 @@ const normalizedSeries = computed(() => {
   <section class="metric-chart comparison-chart">
     <header class="metric-chart__header">
       <div>
-        <p class="metric-chart__eyebrow">Comparison</p>
+        <p class="metric-chart__eyebrow">对比分析</p>
         <h3>{{ title }}</h3>
       </div>
       <div class="comparison-chart__legend">
@@ -62,7 +62,7 @@ const normalizedSeries = computed(() => {
       :viewBox="`0 0 ${viewWidth} ${viewHeight}`"
       preserveAspectRatio="none"
       role="img"
-      :aria-label="`${title} comparison chart`"
+      :aria-label="`${title} 对比图`"
     >
       <line :x1="padding" :x2="viewWidth - padding" :y1="padding" :y2="padding" class="metric-chart__grid" />
       <line

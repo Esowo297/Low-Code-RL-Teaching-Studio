@@ -10,14 +10,14 @@ const props = defineProps<{
 }>()
 
 const labelMap: Record<string, string> = {
-  U: 'UP',
-  R: 'RT',
-  D: 'DN',
-  L: 'LT',
-  START: 'ST',
-  GOAL: 'GO',
-  BLOCK: 'XX',
-  TRAP: 'TP',
+  U: '上',
+  R: '右',
+  D: '下',
+  L: '左',
+  START: '起',
+  GOAL: '终',
+  BLOCK: '障',
+  TRAP: '陷',
 }
 
 const toneMap: Record<string, string> = {

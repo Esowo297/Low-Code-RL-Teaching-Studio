@@ -50,11 +50,11 @@ const maxValue = computed(() => (props.series.length ? Math.max(...props.series.
   <section class="metric-chart">
     <header class="metric-chart__header">
       <div>
-        <p class="metric-chart__eyebrow">Training Metric</p>
+        <p class="metric-chart__eyebrow">训练指标</p>
         <h3>{{ title }}</h3>
       </div>
       <div class="metric-chart__meta">
-        <span>Latest {{ latestValue }}</span>
+        <span>最新值 {{ latestValue }}</span>
       </div>
     </header>
 
@@ -63,7 +63,7 @@ const maxValue = computed(() => (props.series.length ? Math.max(...props.series.
       :viewBox="`0 0 ${viewWidth} ${viewHeight}`"
       preserveAspectRatio="none"
       role="img"
-      :aria-label="`${title} line chart`"
+      :aria-label="`${title} 折线图`"
     >
       <line :x1="padding" :x2="viewWidth - padding" :y1="padding" :y2="padding" class="metric-chart__grid" />
       <line
@@ -92,9 +92,9 @@ const maxValue = computed(() => (props.series.length ? Math.max(...props.series.
     </svg>
 
     <footer class="metric-chart__footer">
-      <span>Min {{ minValue }}</span>
-      <span>Max {{ maxValue }}</span>
-      <span>{{ series.length }} samples</span>
+      <span>最小值 {{ minValue }}</span>
+      <span>最大值 {{ maxValue }}</span>
+      <span>{{ series.length }} 个采样点</span>
     </footer>
   </section>
 </template>

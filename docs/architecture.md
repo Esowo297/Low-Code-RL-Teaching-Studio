@@ -1,126 +1,120 @@
-# Architecture Notes
+# 架构说明
 
-## Design Goal
+## 设计目标
 
-The prototype focuses on the smallest system that still supports a convincing graduation-project narrative:
+当前原型聚焦于一个规模尽可能小、但仍能支撑完整毕业设计叙事的系统：
 
-- low-code experiment configuration
-- interactive reinforcement learning execution
-- visual feedback for training outcomes
-- experiment-result persistence for later comparison
+- 低代码实验配置
+- 交互式强化学习执行
+- 训练结果可视化反馈
+- 实验结果持久化与后续对比
 
-## Layered Structure
+## 分层结构
 
-### 1. Configuration Layer
+### 1. 配置层
 
-The frontend exposes a form-driven workflow that replaces handwritten experiment code. Teachers or students define:
+前端通过表单化流程替代手写实验代码。教师或学生可以定义：
 
-- operator identity and submission role
-- teaching assignment template
-- teacher benchmark preset
-- environment parameters
-- reward settings
-- algorithm hyperparameters
-- training rounds and sampling frequency
+- 操作者身份与提交角色
+- 教学作业模板
+- 教师基准预设
+- 环境参数
+- 奖励设置
+- 算法超参数
+- 训练轮次与采样频率
 
-This is the current low-code entry point for the system.
+这是当前系统的低代码入口。
 
-### 2. Environment Layer
+### 2. 环境层
 
-The backend currently provides a configurable `GridWorld` environment. The environment model is intentionally abstracted behind a dedicated module so that later work can add:
+后端当前提供可配置的 `GridWorld` 环境。环境模型被有意识地抽象在独立模块之后，便于后续扩展：
 
-- maze navigation
-- adversarial toy tasks
-- custom classroom exercises
+- 迷宫导航
+- 简单对抗任务
+- 自定义课堂练习
 
-### 3. Algorithm Layer
+### 3. 算法层
 
-The algorithm package currently implements Q-learning and DQN end to end. The interface boundary is designed so the next iteration can introduce policy-gradient methods without changing the API contract used by the frontend.
+算法包当前完整实现了 Q-learning 和 DQN。接口边界已经设计好，后续若引入策略梯度类方法，也无需修改前端依赖的 API 契约。
 
-### 4. Training Service Layer
+### 4. 训练服务层
 
-The training service connects the request schema, environment instance, algorithm implementation, streaming callbacks, and persistence layer. This is the main orchestration point of the backend.
+训练服务层负责连接请求结构、环境实例、算法实现、流式回调以及持久化层，是后端的主要编排节点。
 
-The backend also exposes a lightweight benchmark service that returns teacher-defined baseline presets and threshold targets. This keeps benchmark definitions centralized while leaving pass/fail evaluation in the frontend for immediate classroom feedback.
+后端还提供了一个轻量级基准服务，用于返回教师定义的基线预设和阈值目标。这样可以将基准定义集中管理，同时把通过/未通过评估保留在前端，以便立即提供课堂反馈。
 
-In addition, the backend exposes built-in assignment templates that package a task description, learning goals, recommended experiment configuration, and an optional benchmark link. This provides a course-oriented layer above raw benchmark presets.
+此外，后端还提供内置作业模板，将任务说明、学习目标、推荐实验配置和可选基准关联统一打包，从而在原始基准预设之上增加面向课程的组织层。
 
-### 5. Persistence Layer
+### 5. 持久化层
 
-The platform now stores experiment results in SQLite and keeps the full serialized payload for later retrieval, comparison, and replay-oriented extensions. The stored record also includes submitter identity and role metadata so that teacher dashboards can aggregate student work without requiring a separate user-management subsystem. Legacy JSON result files can be imported automatically into the database.
+平台当前将实验结果存储到 SQLite 中，并保留完整序列化载荷，以支持后续查询、对比和轨迹回放扩展。存储记录还包含提交者身份和角色元数据，因此教师仪表板可以在不引入独立用户管理子系统的前提下聚合学生实验结果。旧版 JSON 结果文件也可自动导入数据库。
 
-### 6. Visualization Layer
+### 6. 可视化层
 
-The frontend consumes the experiment result and renders:
+前端基于实验结果渲染以下内容：
 
-- live progress updates during training
-- pause, resume, and cancel control feedback
-- assignment templates and learning-goal summaries
-- teacher benchmark presets and threshold summaries
-- benchmark pass/fail evaluation for completed runs
-- Markdown report export for completed runs
-- teacher/student workspace metadata
-- teacher analytics for algorithm distribution, assignment progress, and student activity
-- step-by-step sampled trajectory replay
-- reward trend
-- epsilon trend
-- TD-error trend
-- multi-run comparison curves
-- learned policy grid
-- saved run history
+- 训练过程中的实时进度更新
+- 暂停、继续和取消控制反馈
+- 作业模板与学习目标摘要
+- 教师基准预设与阈值摘要
+- 已完成实验的基准通过/未通过评估
+- 已完成实验的 Markdown 报告导出
+- 教师/学生工作区元数据
+- 面向教师的算法分布、作业进度与学生活跃度分析
+- 逐步采样轨迹回放
+- 奖励趋势
+- epsilon 趋势
+- TD 误差趋势
+- 多次运行对比曲线
+- 学得策略网格
+- 已保存实验历史
 
-## Why This Scope Is Appropriate For The Thesis
+## 验证方式
 
-- It is small enough to finish within a graduation-project schedule.
-- It is complete enough to support system design, implementation details, and experiment analysis.
-- It leaves clear expansion points for the "future work" section.
+将实验分为两类：
 
-## Recommended Thesis Evaluation
+### 系统实验
 
-Use two categories of experiments:
+- 实验提交后的响应时间
+- 单轮训练结束到图表刷新的流式延迟
+- 多次运行下训练完成的稳定性
+- 长训练历史下前端渲染的流畅度
 
-### System Experiments
+### 教学实验
 
-- response time for experiment submission
-- streaming latency between episode completion and chart refresh
-- training completion stability across multiple runs
-- frontend rendering fluency for longer training histories
+- 完成标准强化学习实验所需的平均时间
+- 首次尝试即达到教师基准的学生比例
+- 达到基准前所需的参数调整次数
+- 学生对奖励设计与探索策略的理解程度
+- 基于简单问卷的可用性反馈
 
-### Teaching Experiments
+## 角色与分析范围
 
-- average time needed to complete a standard RL experiment
-- percentage of students meeting the teacher benchmark on the first attempt
-- number of parameter adjustments required before reaching the benchmark
-- student understanding of reward design and exploration strategy
-- usability feedback through a simple questionnaire
+当前原型使用轻量级角色元数据，而不是完整认证系统。这是一个有意的范围控制决策：
 
-## Role And Analytics Scope
+- 学生与教师可以在已保存实验记录中区分
+- 教师定义的基准预设可以跨用户复用
+- 可以在不引入账号管理复杂度的前提下，基于持久化结果计算作业级和基准级分析
 
-The current prototype uses lightweight role metadata instead of a full authentication system. This is an intentional scope control choice:
+对于毕业设计原型而言，这一范围已经足够，因为它展示了教学流程差异化能力，同时保持了实现规模小、易于测试。
 
-- students and teachers can be distinguished in saved experiment records
-- teacher-defined benchmark presets remain reusable across users
-- assignment-level and benchmark-level analytics can be computed from persisted runs without introducing account management complexity
+## 报告导出设计
 
-This is sufficient for a graduation-project prototype because it demonstrates teaching workflow differentiation while keeping the implementation small and testable.
+当前原型将教学报告导出为 Markdown，而不是 PDF。这是有意的设计选择：
 
-## Report Export Design
+- Markdown 轻量，便于根据结构化实验数据直接生成。
+- 导出文件只需少量修改即可插入论文附录。
+- 同一份输出未来可以进一步转换为 HTML 或 PDF，而无需重构报告结构。
 
-The current prototype renders teaching reports as Markdown instead of PDF. This is deliberate:
+当前报告包含以下内容：
 
-- Markdown is lightweight and easy to generate from structured experiment data.
-- The exported file can be inserted into thesis appendices with minimal editing.
-- The same output can later be converted to HTML or PDF without redesigning the report schema.
+- 实验元数据与配置
+- 作业元数据
+- 奖励与成功情况摘要
+- 采样路径轨迹
+- 教师基准评估
+- 适合课堂反馈的简短解释说明
 
-The report currently includes:
+## 下一步技术升级
 
-- experiment metadata and configuration
-- assignment metadata
-- reward and success summary
-- sampled path trace
-- teacher benchmark evaluation
-- short interpretation notes suitable for classroom feedback
-
-## Suggested Next Technical Upgrade
-
-The strongest next upgrade is no longer basic experiment orchestration, because the current prototype already supports streaming, control, persistence, comparison, assignment templates, benchmark evaluation, report export, sampled trajectory replay, and lightweight role-based analytics. The next practical step is teaching workflow completion, for example authentication, teacher-managed template authoring, richer replay annotation, or cross-assignment cohort analytics.
+当前原型已经具备流式训练、训练控制、结果持久化、实验对比、作业模板、基准评估、报告导出、采样轨迹回放以及轻量级角色分析等能力，因此下一步最值得做的已经不是基础实验编排，而是补齐教学工作流，例如认证机制、教师自定义模板、更加丰富的回放标注，或跨作业的班级分析能力。

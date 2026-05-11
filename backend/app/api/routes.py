@@ -25,7 +25,7 @@ from app.services.reporting import render_experiment_report
 from app.services.training_service import TrainingService
 
 
-router = APIRouter(prefix="/api", tags=["teaching-platform"])
+router = APIRouter(prefix="/api", tags=["教学平台"])
 training_service = TrainingService()
 experiment_request_adapter = TypeAdapter(ExperimentRequest)
 
@@ -196,7 +196,7 @@ async def stream_experiment(websocket: WebSocket) -> None:
                         "run_id": run_state["run_id"],
                         "completed_episodes": run_state["completed_episodes"],
                         "total_episodes": run_state["total_episodes"],
-                        "message": "Training cancelled by user",
+                        "message": "训练已由用户取消",
                     }
                 )
 

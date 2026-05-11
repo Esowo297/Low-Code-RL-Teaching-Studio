@@ -1,4 +1,4 @@
-export type AlgorithmId = 'q_learning' | 'dqn'
+export type AlgorithmId = 'q_learning' | 'sarsa' | 'dqn' | 'reinforce'
 export type SubmissionRole = 'teacher' | 'student'
 
 export interface GridPosition {
@@ -45,6 +45,22 @@ export interface DQNConfig {
   hidden_dim: number
 }
 
+export interface ReinforceConfig {
+  learning_rate: number
+  gamma: number
+  max_steps_per_episode: number
+  hidden_dim: number
+}
+
+export interface SARSAConfig {
+  learning_rate: number
+  gamma: number
+  epsilon_start: number
+  epsilon_min: number
+  epsilon_decay: number
+  max_steps_per_episode: number
+}
+
 export interface TrainingConfig {
   episodes: number
   seed: number
@@ -73,7 +89,21 @@ export interface DQNExperimentRequest extends ExperimentRequestBase {
   algorithm_config: DQNConfig
 }
 
-export type ExperimentRequest = QLearningExperimentRequest | DQNExperimentRequest
+export interface ReinforceExperimentRequest extends ExperimentRequestBase {
+  algorithm_id: 'reinforce'
+  algorithm_config: ReinforceConfig
+}
+
+export interface SARSAExperimentRequest extends ExperimentRequestBase {
+  algorithm_id: 'sarsa'
+  algorithm_config: SARSAConfig
+}
+
+export type ExperimentRequest =
+  | QLearningExperimentRequest
+  | SARSAExperimentRequest
+  | DQNExperimentRequest
+  | ReinforceExperimentRequest
 
 export interface EpisodeMetric {
   episode: number

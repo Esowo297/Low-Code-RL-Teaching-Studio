@@ -7,6 +7,8 @@ from uuid import uuid4
 from app.repositories.experiment_store import ExperimentStore
 from app.rl.algorithms.dqn import DQNTrainer
 from app.rl.algorithms.q_learning import QLearningTrainer
+from app.rl.algorithms.reinforce import ReinforceTrainer
+from app.rl.algorithms.sarsa import SARSATrainer
 from app.rl.envs.gridworld import GridWorldEnv
 from app.rl.training_artifacts import AsyncProgressCallback, StreamController
 from app.schemas.experiment import ExperimentHistoryEntry, ExperimentRequestType, ExperimentResult, ExperimentSummary
@@ -49,13 +51,20 @@ class TrainingService:
     def get_run(self, run_id: str) -> ExperimentResult:
         return self.store.load(run_id)
 
-    def _create_trainer(self, request: ExperimentRequestType) -> QLearningTrainer | DQNTrainer:
+    def _create_trainer(
+        self,
+        request: ExperimentRequestType,
+    ) -> QLearningTrainer | DQNTrainer | ReinforceTrainer | SARSATrainer:
         env = GridWorldEnv(request.env_config)
         if request.algorithm_id == "q_learning":
             return QLearningTrainer(env, request.algorithm_config, request.training)
         if request.algorithm_id == "dqn":
             return DQNTrainer(env, request.algorithm_config, request.training)
-        raise ValueError(f"Unsupported algorithm: {request.algorithm_id}")
+        if request.algorithm_id == "reinforce":
+            return ReinforceTrainer(env, request.algorithm_config, request.training)
+        if request.algorithm_id == "sarsa":
+            return SARSATrainer(env, request.algorithm_config, request.training)
+        raise ValueError(f"Unsupported algorithm_id: {request.algorithm_id}")
 
     def _create_run_identity(self) -> tuple[str, str]:
         created_at = datetime.now(timezone.utc).isoformat()

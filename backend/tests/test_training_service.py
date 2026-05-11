@@ -6,7 +6,16 @@ from fastapi.testclient import TestClient
 from app.api.routes import training_service as routed_training_service
 from app.main import app
 from app.repositories.experiment_store import ExperimentStore
-from app.schemas.experiment import DQNConfig, DQNExperimentRequest, QLearningExperimentRequest, TrainingConfig
+from app.schemas.experiment import (
+    DQNConfig,
+    DQNExperimentRequest,
+    QLearningExperimentRequest,
+    ReinforceConfig,
+    ReinforceExperimentRequest,
+    SARSAConfig,
+    SARSAExperimentRequest,
+    TrainingConfig,
+)
 from app.services.training_service import TrainingService
 
 
@@ -44,6 +53,46 @@ def test_training_service_creates_dqn_result(tmp_path: Path) -> None:
     result = service.run_experiment(request)
 
     assert result.request.algorithm_id == "dqn"
+    assert len(result.metrics) == 30
+    assert len(result.policy_grid) == result.request.env_config.size
+
+
+def test_training_service_creates_reinforce_result(tmp_path: Path) -> None:
+    service = TrainingService(store=ExperimentStore(base_path=tmp_path))
+    request = ReinforceExperimentRequest(
+        training=TrainingConfig(episodes=30, seed=5, trace_frequency=10),
+        algorithm_config=ReinforceConfig(
+            learning_rate=0.01,
+            gamma=0.95,
+            max_steps_per_episode=50,
+            hidden_dim=32,
+        ),
+    )
+
+    result = service.run_experiment(request)
+
+    assert result.request.algorithm_id == "reinforce"
+    assert len(result.metrics) == 30
+    assert len(result.policy_grid) == result.request.env_config.size
+
+
+def test_training_service_creates_sarsa_result(tmp_path: Path) -> None:
+    service = TrainingService(store=ExperimentStore(base_path=tmp_path))
+    request = SARSAExperimentRequest(
+        training=TrainingConfig(episodes=30, seed=5, trace_frequency=10),
+        algorithm_config=SARSAConfig(
+            learning_rate=0.2,
+            gamma=0.92,
+            epsilon_start=1.0,
+            epsilon_min=0.05,
+            epsilon_decay=0.98,
+            max_steps_per_episode=50,
+        ),
+    )
+
+    result = service.run_experiment(request)
+
+    assert result.request.algorithm_id == "sarsa"
     assert len(result.metrics) == 30
     assert len(result.policy_grid) == result.request.env_config.size
 
@@ -200,9 +249,11 @@ def test_get_benchmark_catalog_returns_teacher_presets() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["benchmarks"]) >= 2
+    assert len(payload["benchmarks"]) >= 4
     assert payload["benchmarks"][0]["request"]["algorithm_id"] == "q_learning"
-    assert payload["benchmarks"][1]["request"]["algorithm_id"] == "dqn"
+    assert payload["benchmarks"][1]["request"]["algorithm_id"] == "sarsa"
+    assert payload["benchmarks"][2]["request"]["algorithm_id"] == "dqn"
+    assert payload["benchmarks"][3]["request"]["algorithm_id"] == "reinforce"
     assert payload["benchmarks"][0]["thresholds"][0]["metric_id"] == "average_reward"
     assert payload["benchmarks"][0]["request"]["submission_role"] == "teacher"
 
@@ -214,9 +265,11 @@ def test_get_assignment_catalog_returns_builtin_templates() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["assignments"]) >= 2
+    assert len(payload["assignments"]) >= 4
     assert payload["assignments"][0]["benchmark_id"] == "teacher_gridworld_q_learning_baseline"
-    assert payload["assignments"][1]["request"]["assignment_id"] == "assignment_gridworld_dqn_comparison"
+    assert payload["assignments"][1]["request"]["algorithm_id"] == "sarsa"
+    assert payload["assignments"][2]["request"]["assignment_id"] == "assignment_gridworld_dqn_comparison"
+    assert payload["assignments"][3]["request"]["algorithm_id"] == "reinforce"
 
 
 def test_render_report_endpoint_returns_markdown_with_benchmark_section(tmp_path: Path) -> None:
@@ -235,8 +288,8 @@ def test_render_report_endpoint_returns_markdown_with_benchmark_section(tmp_path
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/markdown")
     assert result.run_id in response.text
-    assert "Teacher Benchmark Evaluation" in response.text
-    assert "Teacher Baseline | Q-Learning Fundamentals" in response.text
+    assert "教师基准评估" in response.text
+    assert "Q-Learning" in response.text
 
 
 def test_classroom_analytics_endpoint_aggregates_saved_runs(tmp_path: Path) -> None:

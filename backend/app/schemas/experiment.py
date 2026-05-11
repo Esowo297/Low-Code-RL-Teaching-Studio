@@ -83,6 +83,10 @@ class QLearningConfig(StrictModel):
         return self
 
 
+class SARSAConfig(QLearningConfig):
+    pass
+
+
 class DQNConfig(StrictModel):
     learning_rate: float = Field(default=0.001, gt=0.0, le=0.1)
     gamma: float = Field(default=0.95, gt=0.0, le=0.999)
@@ -105,6 +109,13 @@ class DQNConfig(StrictModel):
         if self.warmup_steps > self.replay_buffer_size:
             raise ValueError("warmup_steps must be less than or equal to replay_buffer_size")
         return self
+
+
+class ReinforceConfig(StrictModel):
+    learning_rate: float = Field(default=0.01, gt=0.0, le=0.1)
+    gamma: float = Field(default=0.95, gt=0.0, le=0.999)
+    max_steps_per_episode: int = Field(default=80, ge=10, le=400)
+    hidden_dim: int = Field(default=64, ge=16, le=512)
 
 
 class TrainingConfig(StrictModel):
@@ -134,13 +145,30 @@ class QLearningExperimentRequest(ExperimentRequestBase):
     algorithm_config: QLearningConfig = Field(default_factory=QLearningConfig)
 
 
+class SARSAExperimentRequest(ExperimentRequestBase):
+    name: str = Field(default="GridWorld SARSA Demo", min_length=3, max_length=80)
+    algorithm_id: Literal["sarsa"] = "sarsa"
+    algorithm_config: SARSAConfig = Field(default_factory=SARSAConfig)
+
+
 class DQNExperimentRequest(ExperimentRequestBase):
     name: str = Field(default="GridWorld DQN Demo", min_length=3, max_length=80)
     algorithm_id: Literal["dqn"] = "dqn"
     algorithm_config: DQNConfig = Field(default_factory=DQNConfig)
 
 
-ExperimentRequestType: TypeAlias = QLearningExperimentRequest | DQNExperimentRequest
+class ReinforceExperimentRequest(ExperimentRequestBase):
+    name: str = Field(default="GridWorld REINFORCE Demo", min_length=3, max_length=80)
+    algorithm_id: Literal["reinforce"] = "reinforce"
+    algorithm_config: ReinforceConfig = Field(default_factory=ReinforceConfig)
+
+
+ExperimentRequestType: TypeAlias = (
+    QLearningExperimentRequest
+    | SARSAExperimentRequest
+    | DQNExperimentRequest
+    | ReinforceExperimentRequest
+)
 ExperimentRequest: TypeAlias = Annotated[ExperimentRequestType, Field(discriminator="algorithm_id")]
 
 

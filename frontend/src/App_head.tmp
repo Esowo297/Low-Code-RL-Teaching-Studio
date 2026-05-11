@@ -38,10 +38,6 @@ import type {
   PathTrace,
   QLearningConfig,
   QLearningExperimentRequest,
-  ReinforceConfig,
-  ReinforceExperimentRequest,
-  SARSAConfig,
-  SARSAExperimentRequest,
   SubmissionRole,
 } from './types'
 
@@ -85,7 +81,7 @@ const comparisonLoadingIds = ref<string[]>([])
 const selectedAssignmentId = ref('')
 const selectedBenchmarkId = ref('')
 const viewerRole = ref<SubmissionRole>('student')
-const submittedBy = ref('学生A')
+const submittedBy = ref('Student A')
 const reportExporting = ref(false)
 const replaySourceRunId = ref('')
 const replayTraceEpisode = ref(0)
@@ -96,7 +92,7 @@ let replayTimer: number | null = null
 
 const obstacleText = ref('1:2,2:2,4:2,4:3')
 const trapText = ref('2:4,4:1')
-const experimentName = ref('GridWorld Q-Learning 演示')
+const experimentName = ref('GridWorld Q-Learning Demo')
 const persistResult = ref(true)
 const comparisonPalette = ['#0f5bd8', '#d97706', '#0f766e', '#b42318']
 
@@ -129,15 +125,6 @@ const qLearningConfig = reactive<QLearningConfig>({
   max_steps_per_episode: 80,
 })
 
-const sarsaConfig = reactive<SARSAConfig>({
-  learning_rate: 0.2,
-  gamma: 0.92,
-  epsilon_start: 1,
-  epsilon_min: 0.05,
-  epsilon_decay: 0.98,
-  max_steps_per_episode: 80,
-})
-
 const dqnConfig = reactive<DQNConfig>({
   learning_rate: 0.001,
   gamma: 0.95,
@@ -152,30 +139,10 @@ const dqnConfig = reactive<DQNConfig>({
   hidden_dim: 64,
 })
 
-const reinforceConfig = reactive<ReinforceConfig>({
-  learning_rate: 0.01,
-  gamma: 0.95,
-  max_steps_per_episode: 80,
-  hidden_dim: 64,
-})
-
-function defaultExperimentName(algorithmId: AlgorithmId) {
-  if (algorithmId === 'q_learning') {
-    return 'GridWorld Q-Learning 演示'
-  }
-  if (algorithmId === 'sarsa') {
-    return 'GridWorld SARSA 演示'
-  }
-  if (algorithmId === 'dqn') {
-    return 'GridWorld DQN 演示'
-  }
-  return 'GridWorld REINFORCE 演示'
-}
-
 const heroMetrics = computed(() => [
-  { label: '平台定位', value: '低代码强化学习实验室' },
-  { label: '当前视角', value: roleLabel(viewerRole.value) },
-  { label: '当前操作人', value: submittedBy.value || '未指定' },
+  { label: 'Focus', value: 'Low-Code RL Lab' },
+  { label: 'Workspace', value: roleLabel(viewerRole.value) },
+  { label: 'Operator', value: submittedBy.value || 'Unassigned' },
 ])
 
 const activeMetrics = computed(() => currentResult.value?.metrics ?? liveMetrics.value)
@@ -186,10 +153,10 @@ const tdErrorSeries = computed(() => activeMetrics.value.map((metric) => ({ x: m
 const summaryCards = computed(() => {
   if (currentResult.value) {
     return [
-      { label: '平均奖励', value: currentResult.value.summary.average_reward.toFixed(3) },
-      { label: '最佳奖励', value: currentResult.value.summary.best_reward.toFixed(3) },
-      { label: '成功率', value: `${(currentResult.value.summary.success_rate * 100).toFixed(1)}%` },
-      { label: '稳定窗口', value: `${(currentResult.value.summary.stable_success_rate * 100).toFixed(1)}%` },
+      { label: 'Average Reward', value: currentResult.value.summary.average_reward.toFixed(3) },
+      { label: 'Best Reward', value: currentResult.value.summary.best_reward.toFixed(3) },
+      { label: 'Success Rate', value: `${(currentResult.value.summary.success_rate * 100).toFixed(1)}%` },
+      { label: 'Stable Window', value: `${(currentResult.value.summary.stable_success_rate * 100).toFixed(1)}%` },
     ]
   }
 
@@ -199,10 +166,10 @@ const summaryCards = computed(() => {
 
   const bestReward = Math.max(...liveMetrics.value.map((metric) => metric.reward))
   return [
-    { label: '平均奖励', value: liveAverageReward.value.toFixed(3) },
-    { label: '最佳奖励', value: bestReward.toFixed(3) },
-    { label: '成功率', value: `${(liveSuccessRate.value * 100).toFixed(1)}%` },
-    { label: '训练进度', value: `${liveCompletedEpisodes.value}/${liveTotalEpisodes.value} (${Math.round(liveProgress.value * 100)}%)` },
+    { label: 'Average Reward', value: liveAverageReward.value.toFixed(3) },
+    { label: 'Best Reward', value: bestReward.toFixed(3) },
+    { label: 'Success Rate', value: `${(liveSuccessRate.value * 100).toFixed(1)}%` },
+    { label: 'Progress', value: `${liveCompletedEpisodes.value}/${liveTotalEpisodes.value} (${Math.round(liveProgress.value * 100)}%)` },
   ]
 })
 
@@ -232,12 +199,12 @@ const canResumeStream = computed(() => loading.value && streamState.value === 'p
 const canCancelStream = computed(() => loading.value && streamState.value !== 'cancelling')
 const streamStateLabel = computed(() => {
   if (streamState.value === 'paused') {
-    return '已暂停'
+    return 'Paused'
   }
   if (streamState.value === 'cancelling') {
-    return '取消中'
+    return 'Cancelling'
   }
-  return '训练中'
+  return 'Running'
 })
 const compareRuns = computed(() => {
   const dedup = new Map<string, ExperimentResult>()
@@ -281,9 +248,9 @@ const canStepReplayForward = computed(
 )
 const replayProgressLabel = computed(() => {
   if (!replayPathLength.value) {
-    return '当前未加载采样路径。'
+    return 'No sampled path loaded.'
   }
-  return `回放步数 ${replayStepIndex.value + 1}/${replayPathLength.value}`
+  return `Step ${replayStepIndex.value + 1}/${replayPathLength.value}`
 })
 const compareRewardSeries = computed<ComparisonSeries[]>(() =>
   compareRuns.value.map((result, index) => ({
@@ -319,15 +286,15 @@ const teacherAnalyticsCards = computed(() => {
   }
 
   return [
-    { label: '实验总次数', value: `${analytics.value.total_runs}` },
-    { label: '学生实验次数', value: `${analytics.value.student_runs}` },
+    { label: 'Total Runs', value: `${analytics.value.total_runs}` },
+    { label: 'Student Runs', value: `${analytics.value.student_runs}` },
     {
-      label: analytics.value.benchmark ? '基准通过率' : '教师实验次数',
+      label: analytics.value.benchmark ? 'Benchmark Pass Rate' : 'Teacher Runs',
       value: analytics.value.benchmark
         ? `${(analytics.value.benchmark.pass_rate * 100).toFixed(1)}%`
         : `${analytics.value.teacher_runs}`,
     },
-    { label: '平均成功率', value: `${(analytics.value.average_success_rate * 100).toFixed(1)}%` },
+    { label: 'Average Success', value: `${(analytics.value.average_success_rate * 100).toFixed(1)}%` },
   ]
 })
 const effectiveAnalyticsBenchmarkId = computed(() => {
@@ -346,25 +313,25 @@ const benchmarkEvaluation = computed<BenchmarkEvaluation | null>(() => {
 
   const compatibilityChecks: BenchmarkCheckRow[] = [
     {
-      label: '算法一致性',
+      label: 'Algorithm Match',
       passed: result.request.algorithm_id === benchmark.request.algorithm_id,
       expected: algorithmLabel(benchmark.request.algorithm_id),
       actual: algorithmLabel(result.request.algorithm_id),
-      helpText: '教师基准应在相同算法类型下进行比较。',
+      helpText: 'Teacher baselines should be compared against the same algorithm family.',
     },
     {
-      label: '环境规模一致性',
+      label: 'Grid Size Match',
       passed: result.request.env_config.size === benchmark.request.env_config.size,
       expected: `${benchmark.request.env_config.size} x ${benchmark.request.env_config.size}`,
       actual: `${result.request.env_config.size} x ${result.request.env_config.size}`,
-      helpText: '环境规模变化会改变任务难度，削弱直接比较的意义。',
+      helpText: 'Changing the environment size changes the difficulty and invalidates direct comparison.',
     },
     {
-      label: '训练轮次要求',
+      label: 'Episode Budget',
       passed: result.request.training.episodes >= benchmark.request.training.episodes,
       expected: `>= ${benchmark.request.training.episodes}`,
       actual: `${result.request.training.episodes}`,
-      helpText: '训练轮次不足时，不宜与教师基准直接比较。',
+      helpText: 'Shorter runs are not directly comparable to the teacher baseline thresholds.',
     },
   ]
 
@@ -399,15 +366,15 @@ watch(
 )
 
 watch(selectedAlgorithm, (algorithmId) => {
-  experimentName.value = defaultExperimentName(algorithmId)
+  experimentName.value = algorithmId === 'q_learning' ? 'GridWorld Q-Learning Demo' : 'GridWorld DQN Demo'
 })
 
 watch(viewerRole, (role, previousRole) => {
   const currentName = submittedBy.value.trim()
-  const wasDefaultStudent = currentName === '' || currentName === '学生A'
-  const wasDefaultTeacher = currentName === '课程教师'
+  const wasDefaultStudent = currentName === '' || currentName === 'Student A'
+  const wasDefaultTeacher = currentName === 'Course Instructor'
   if ((previousRole === 'student' && wasDefaultStudent) || (previousRole === 'teacher' && wasDefaultTeacher)) {
-    submittedBy.value = role === 'teacher' ? '课程教师' : '学生A'
+    submittedBy.value = role === 'teacher' ? 'Course Instructor' : 'Student A'
   }
 })
 
@@ -546,20 +513,11 @@ async function loadAnalytics() {
 }
 
 function algorithmLabel(algorithmId: AlgorithmId) {
-  if (algorithmId === 'q_learning') {
-    return 'Q-Learning'
-  }
-  if (algorithmId === 'sarsa') {
-    return 'SARSA'
-  }
-  if (algorithmId === 'dqn') {
-    return 'DQN'
-  }
-  return 'REINFORCE'
+  return algorithmId === 'q_learning' ? 'Q-Learning' : 'DQN'
 }
 
 function roleLabel(role: SubmissionRole) {
-  return role === 'teacher' ? '教师视角' : '学生视角'
+  return role === 'teacher' ? 'Teacher View' : 'Student View'
 }
 
 function parseCellList(input: string): GridPosition[] {
@@ -576,7 +534,7 @@ function parseCellList(input: string): GridPosition[] {
       const row = Number(rowValue)
       const col = Number(colValue)
       if (!Number.isInteger(row) || !Number.isInteger(col)) {
-        throw new Error(`单元格格式错误：${pair}。请使用 1:2,2:2 这样的 row:col 格式。`)
+        throw new Error(`Invalid cell format: ${pair}. Use row:col pairs such as 1:2,2:2`)
       }
       return { row, col }
     })
@@ -587,7 +545,7 @@ function serializeCellList(cells: GridPosition[]) {
 }
 
 function comparisonLabel(result: ExperimentResult, isCurrent = false) {
-  const prefix = isCurrent ? '当前实验' : result.request.name
+  const prefix = isCurrent ? 'Current' : result.request.name
   return `${prefix} (${algorithmLabel(result.request.algorithm_id)})`
 }
 
@@ -626,7 +584,7 @@ function toggleComparison(runId: string) {
   }
 
   if (selectedComparisonIds.value.length >= 3) {
-    errorMessage.value = '最多只能同时对比三条已保存的实验记录。'
+    errorMessage.value = 'You can compare up to three saved runs at once.'
     return
   }
 
@@ -646,7 +604,7 @@ async function ensureComparisonRun(runId: string) {
       [runId]: result,
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '加载对比实验失败。'
+    errorMessage.value = error instanceof Error ? error.message : 'Failed to load comparison run.'
   } finally {
     comparisonLoadingIds.value = comparisonLoadingIds.value.filter((id) => id !== runId)
   }
@@ -655,7 +613,7 @@ async function ensureComparisonRun(runId: string) {
 function loadDemoPreset() {
   selectedAssignmentId.value = ''
   selectedBenchmarkId.value = ''
-  experimentName.value = defaultExperimentName(selectedAlgorithm.value)
+  experimentName.value = selectedAlgorithm.value === 'q_learning' ? 'GridWorld Q-Learning Demo' : 'GridWorld DQN Demo'
   envConfig.size = 6
   envConfig.start = { row: 0, col: 0 }
   envConfig.goal = { row: 5, col: 5 }
@@ -666,14 +624,6 @@ function loadDemoPreset() {
     trap_penalty: -10,
   }
   Object.assign(qLearningConfig, {
-    learning_rate: 0.2,
-    gamma: 0.92,
-    epsilon_start: 1,
-    epsilon_min: 0.05,
-    epsilon_decay: 0.98,
-    max_steps_per_episode: 80,
-  })
-  Object.assign(sarsaConfig, {
     learning_rate: 0.2,
     gamma: 0.92,
     epsilon_start: 1,
@@ -692,12 +642,6 @@ function loadDemoPreset() {
     replay_buffer_size: 2000,
     target_sync_interval: 40,
     warmup_steps: 80,
-    hidden_dim: 64,
-  })
-  Object.assign(reinforceConfig, {
-    learning_rate: 0.01,
-    gamma: 0.95,
-    max_steps_per_episode: 80,
     hidden_dim: 64,
   })
   Object.assign(training, {
@@ -725,12 +669,8 @@ function applyExperimentRequestPreset(request: ExperimentRequest) {
 
   if (request.algorithm_id === 'q_learning') {
     Object.assign(qLearningConfig, request.algorithm_config)
-  } else if (request.algorithm_id === 'sarsa') {
-    Object.assign(sarsaConfig, request.algorithm_config)
-  } else if (request.algorithm_id === 'dqn') {
-    Object.assign(dqnConfig, request.algorithm_config)
   } else {
-    Object.assign(reinforceConfig, request.algorithm_config)
+    Object.assign(dqnConfig, request.algorithm_config)
   }
 }
 
@@ -740,7 +680,7 @@ function applySelectedBenchmark() {
   }
 
   applyExperimentRequestPreset(selectedBenchmark.value.request)
-  streamNotice.value = `已加载教师基准模板：${selectedBenchmark.value.name}`
+  streamNotice.value = `Loaded teacher benchmark preset: ${selectedBenchmark.value.name}`
 }
 
 function applySelectedAssignment() {
@@ -751,7 +691,7 @@ function applySelectedAssignment() {
   selectedBenchmarkId.value = selectedAssignment.value.benchmark_id ?? ''
   applyExperimentRequestPreset(selectedAssignment.value.request)
   experimentName.value = selectedAssignment.value.request.name
-  streamNotice.value = `已加载作业模板：${selectedAssignment.value.title}`
+  streamNotice.value = `Loaded assignment template: ${selectedAssignment.value.title}`
 }
 
 async function exportExperimentReport() {
@@ -776,9 +716,9 @@ async function exportExperimentReport() {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(reportUrl)
-    streamNotice.value = '实验报告已导出为 Markdown 文件。'
+    streamNotice.value = 'Teaching report exported as Markdown.'
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '导出实验报告失败。'
+    errorMessage.value = error instanceof Error ? error.message : 'Failed to export report.'
   } finally {
     reportExporting.value = false
   }
@@ -841,7 +781,7 @@ function formatReplayRunLabel(result: ExperimentResult) {
 
 function formatReplayPath() {
   if (!replayActiveTrace.value || !replayPathLength.value) {
-    return '当前没有可供回放的采样路径。'
+    return 'No sampled path available for replay.'
   }
 
   return replayActiveTrace.value.path
@@ -868,7 +808,7 @@ function buildPayload(): ExperimentRequest {
   if (selectedAlgorithm.value === 'q_learning') {
     const request: QLearningExperimentRequest = {
       ...sharedPayload,
-      submitted_by: submittedBy.value.trim() || '匿名学生',
+      submitted_by: submittedBy.value.trim() || 'Anonymous Student',
       submission_role: viewerRole.value,
       assignment_id: selectedAssignment.value?.id ?? null,
       assignment_title: selectedAssignment.value?.title ?? null,
@@ -878,40 +818,14 @@ function buildPayload(): ExperimentRequest {
     return request
   }
 
-  if (selectedAlgorithm.value === 'sarsa') {
-    const request: SARSAExperimentRequest = {
-      ...sharedPayload,
-      submitted_by: submittedBy.value.trim() || '匿名学生',
-      submission_role: viewerRole.value,
-      assignment_id: selectedAssignment.value?.id ?? null,
-      assignment_title: selectedAssignment.value?.title ?? null,
-      algorithm_id: 'sarsa',
-      algorithm_config: { ...sarsaConfig },
-    }
-    return request
-  }
-
-  if (selectedAlgorithm.value === 'dqn') {
-    const request: DQNExperimentRequest = {
-      ...sharedPayload,
-      submitted_by: submittedBy.value.trim() || '匿名学生',
-      submission_role: viewerRole.value,
-      assignment_id: selectedAssignment.value?.id ?? null,
-      assignment_title: selectedAssignment.value?.title ?? null,
-      algorithm_id: 'dqn',
-      algorithm_config: { ...dqnConfig },
-    }
-    return request
-  }
-
-  const request: ReinforceExperimentRequest = {
+  const request: DQNExperimentRequest = {
     ...sharedPayload,
-    submitted_by: submittedBy.value.trim() || '匿名学生',
+    submitted_by: submittedBy.value.trim() || 'Anonymous Student',
     submission_role: viewerRole.value,
     assignment_id: selectedAssignment.value?.id ?? null,
     assignment_title: selectedAssignment.value?.title ?? null,
-    algorithm_id: 'reinforce',
-    algorithm_config: { ...reinforceConfig },
+    algorithm_id: 'dqn',
+    algorithm_config: { ...dqnConfig },
   }
   return request
 }
@@ -960,16 +874,16 @@ async function handleRunExperiment() {
     const result = await streamSession.result
     if (result) {
       currentResult.value = result
-      streamNotice.value = '训练已完成。'
+      streamNotice.value = 'Training completed.'
       await loadHistory()
       if (viewerRole.value === 'teacher') {
         await loadAnalytics()
       }
     } else {
-      streamNotice.value = streamNotice.value || '训练已取消。'
+      streamNotice.value = streamNotice.value || 'Training cancelled.'
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '运行实验失败。'
+    errorMessage.value = error instanceof Error ? error.message : 'Failed to run experiment.'
   } finally {
     loading.value = false
     streamState.value = 'idle'
@@ -979,7 +893,7 @@ async function handleRunExperiment() {
 
 function formatPath() {
   if (!latestTrace.value) {
-    return '当前没有采样路径数据。'
+    return 'No sampled path available.'
   }
 
   return latestTrace.value.path.map((cell) => `(${cell.row},${cell.col})`).join(' -> ')
@@ -1002,10 +916,11 @@ function cancelTraining() {
   <div class="shell">
     <header class="hero">
       <div class="hero__copy">
-        <p class="hero__eyebrow">毕业设计原型系统</p>
-        <h1>低代码强化学习教学实验平台</h1>
+        <p class="hero__eyebrow">Graduation Project Prototype</p>
+        <h1>Low-Code Reinforcement Learning Teaching Studio</h1>
         <p class="hero__summary">
-          通过结构化配置快速搭建课堂实验，运行 Q-Learning、SARSA、DQN 或 REINFORCE 训练，并观察智能体在学习过程中形成的策略行为。
+          Build a classroom experiment through structured configuration, execute Q-learning or DQN training, and
+          inspect the policy that emerges from learning.
         </p>
       </div>
 
@@ -1021,39 +936,39 @@ function cancelTraining() {
       <section class="panel panel--config">
         <div class="panel__heading">
           <div>
-            <p class="panel__eyebrow">实验设计区</p>
-            <h2>配置一个教学实验</h2>
+            <p class="panel__eyebrow">Experiment Designer</p>
+            <h2>Configure a teaching experiment</h2>
           </div>
-          <button type="button" class="ghost-button" @click="loadDemoPreset">加载演示预设</button>
+          <button type="button" class="ghost-button" @click="loadDemoPreset">Load demo preset</button>
         </div>
 
         <div class="form-grid">
-          <div class="section-title">工作区</div>
+          <div class="section-title">Workspace</div>
 
           <label class="field">
-            <span>当前角色</span>
+            <span>Current Role</span>
             <select v-model="viewerRole" class="field__select">
-              <option value="student">学生</option>
-              <option value="teacher">教师</option>
+              <option value="student">Student</option>
+              <option value="teacher">Teacher</option>
             </select>
           </label>
 
           <label class="field">
-            <span>操作人名称</span>
+            <span>Operator Name</span>
             <input v-model="submittedBy" type="text" maxlength="40" />
           </label>
 
           <label class="field field--full">
-            <span>实验名称</span>
+            <span>Experiment Name</span>
             <input v-model="experimentName" type="text" maxlength="80" />
           </label>
 
-          <div class="section-title">教学作业</div>
+          <div class="section-title">Teaching Assignment</div>
 
           <label class="field field--full">
-            <span>作业模板</span>
+            <span>Assignment Template</span>
             <select v-model="selectedAssignmentId" class="field__select">
-              <option value="">自主实验</option>
+              <option value="">Independent experiment</option>
               <option v-for="assignment in assignmentOptions" :key="assignment.id" :value="assignment.id">
                 {{ assignment.title }}
               </option>
@@ -1063,10 +978,10 @@ function cancelTraining() {
           <div v-if="selectedAssignment" class="assignment-callout field--full">
             <div class="benchmark-callout__header">
               <div>
-                <p class="panel__eyebrow">教学作业</p>
+                <p class="panel__eyebrow">Teaching Assignment</p>
                 <h3>{{ selectedAssignment.title }}</h3>
               </div>
-              <button type="button" class="ghost-button" @click="applySelectedAssignment">应用作业模板</button>
+              <button type="button" class="ghost-button" @click="applySelectedAssignment">Apply assignment template</button>
             </div>
             <p>{{ selectedAssignment.summary }}</p>
             <p class="benchmark-callout__note">{{ selectedAssignment.instructions }}</p>
@@ -1075,12 +990,12 @@ function cancelTraining() {
             </div>
           </div>
 
-          <div class="section-title">教师基准</div>
+          <div class="section-title">Teacher Benchmark</div>
 
           <label class="field field--full">
-            <span>基准模板</span>
+            <span>Benchmark Preset</span>
             <select v-model="selectedBenchmarkId" class="field__select">
-              <option value="">未选择教师基准</option>
+              <option value="">No benchmark selected</option>
               <option v-for="benchmark in benchmarkOptions" :key="benchmark.id" :value="benchmark.id">
                 {{ benchmark.name }}
               </option>
@@ -1090,10 +1005,10 @@ function cancelTraining() {
           <div v-if="selectedBenchmark" class="benchmark-callout field--full">
             <div class="benchmark-callout__header">
               <div>
-                <p class="panel__eyebrow">教师基准</p>
+                <p class="panel__eyebrow">Teacher Benchmark</p>
                 <h3>{{ selectedBenchmark.name }}</h3>
               </div>
-              <button type="button" class="ghost-button" @click="applySelectedBenchmark">应用基准模板</button>
+              <button type="button" class="ghost-button" @click="applySelectedBenchmark">Apply benchmark preset</button>
             </div>
             <p>{{ selectedBenchmark.description }}</p>
             <p class="benchmark-callout__note">{{ selectedBenchmark.teacher_note }}</p>
@@ -1104,15 +1019,15 @@ function cancelTraining() {
             </div>
           </div>
 
-          <div class="section-title">实验环境</div>
+          <div class="section-title">Environment</div>
 
           <label class="field">
-            <span>网格规模</span>
+            <span>Grid Size</span>
             <input v-model.number="envConfig.size" type="number" min="4" max="12" />
           </label>
 
           <label class="field">
-            <span>目标单元</span>
+            <span>Goal Cell</span>
             <div class="field__inline">
               <input v-model.number="envConfig.goal.row" type="number" min="0" />
               <input v-model.number="envConfig.goal.col" type="number" min="0" />
@@ -1120,39 +1035,39 @@ function cancelTraining() {
           </label>
 
           <label class="field field--full">
-            <span>障碍单元</span>
+            <span>Obstacle Cells</span>
             <textarea v-model="obstacleText" rows="2" placeholder="1:2,2:2,4:2,4:3"></textarea>
           </label>
 
           <label class="field field--full">
-            <span>陷阱单元</span>
+            <span>Trap Cells</span>
             <textarea v-model="trapText" rows="2" placeholder="2:4,4:1"></textarea>
           </label>
 
           <label class="field">
-            <span>步进惩罚</span>
+            <span>Step Penalty</span>
             <input v-model.number="envConfig.rewards.step_penalty" type="number" step="0.1" />
           </label>
 
           <label class="field">
-            <span>目标奖励</span>
+            <span>Goal Reward</span>
             <input v-model.number="envConfig.rewards.goal_reward" type="number" step="1" />
           </label>
 
           <label class="field">
-            <span>碰壁惩罚</span>
+            <span>Wall Penalty</span>
             <input v-model.number="envConfig.rewards.wall_penalty" type="number" step="0.1" />
           </label>
 
           <label class="field">
-            <span>陷阱惩罚</span>
+            <span>Trap Penalty</span>
             <input v-model.number="envConfig.rewards.trap_penalty" type="number" step="0.1" />
           </label>
 
-          <div class="section-title">训练算法</div>
+          <div class="section-title">Algorithm</div>
 
           <label class="field field--full">
-            <span>算法类型</span>
+            <span>Algorithm Type</span>
             <select v-model="selectedAlgorithm" class="field__select">
               <option v-for="algorithm in algorithmOptions" :key="algorithm.id" :value="algorithm.id">
                 {{ algorithm.name }}
@@ -1162,161 +1077,107 @@ function cancelTraining() {
 
           <template v-if="selectedAlgorithm === 'q_learning'">
             <label class="field">
-              <span>学习率</span>
+              <span>Learning Rate</span>
               <input v-model.number="qLearningConfig.learning_rate" type="number" min="0.01" max="1" step="0.01" />
             </label>
 
             <label class="field">
-              <span>折扣因子</span>
+              <span>Discount Factor</span>
               <input v-model.number="qLearningConfig.gamma" type="number" min="0.5" max="0.999" step="0.001" />
             </label>
 
             <label class="field">
-              <span>初始探索率</span>
+              <span>Epsilon Start</span>
               <input v-model.number="qLearningConfig.epsilon_start" type="number" min="0" max="1" step="0.01" />
             </label>
 
             <label class="field">
-              <span>最小探索率</span>
+              <span>Epsilon Min</span>
               <input v-model.number="qLearningConfig.epsilon_min" type="number" min="0" max="1" step="0.01" />
             </label>
 
             <label class="field">
-              <span>探索率衰减</span>
+              <span>Epsilon Decay</span>
               <input v-model.number="qLearningConfig.epsilon_decay" type="number" min="0.8" max="1" step="0.001" />
             </label>
 
             <label class="field">
-              <span>每轮最大步数</span>
+              <span>Max Steps / Episode</span>
               <input v-model.number="qLearningConfig.max_steps_per_episode" type="number" min="10" max="400" />
-            </label>
-          </template>
-
-          <template v-else-if="selectedAlgorithm === 'sarsa'">
-            <label class="field">
-              <span>学习率</span>
-              <input v-model.number="sarsaConfig.learning_rate" type="number" min="0.01" max="1" step="0.01" />
-            </label>
-
-            <label class="field">
-              <span>折扣因子</span>
-              <input v-model.number="sarsaConfig.gamma" type="number" min="0.5" max="0.999" step="0.001" />
-            </label>
-
-            <label class="field">
-              <span>初始探索率</span>
-              <input v-model.number="sarsaConfig.epsilon_start" type="number" min="0" max="1" step="0.01" />
-            </label>
-
-            <label class="field">
-              <span>最小探索率</span>
-              <input v-model.number="sarsaConfig.epsilon_min" type="number" min="0" max="1" step="0.01" />
-            </label>
-
-            <label class="field">
-              <span>探索率衰减</span>
-              <input v-model.number="sarsaConfig.epsilon_decay" type="number" min="0.8" max="1" step="0.001" />
-            </label>
-
-            <label class="field">
-              <span>每轮最大步数</span>
-              <input v-model.number="sarsaConfig.max_steps_per_episode" type="number" min="10" max="400" />
-            </label>
-          </template>
-
-          <template v-else-if="selectedAlgorithm === 'dqn'">
-            <label class="field">
-              <span>学习率</span>
-              <input v-model.number="dqnConfig.learning_rate" type="number" min="0.0001" max="0.1" step="0.0001" />
-            </label>
-
-            <label class="field">
-              <span>折扣因子</span>
-              <input v-model.number="dqnConfig.gamma" type="number" min="0.5" max="0.999" step="0.001" />
-            </label>
-
-            <label class="field">
-              <span>初始探索率</span>
-              <input v-model.number="dqnConfig.epsilon_start" type="number" min="0" max="1" step="0.01" />
-            </label>
-
-            <label class="field">
-              <span>最小探索率</span>
-              <input v-model.number="dqnConfig.epsilon_min" type="number" min="0" max="1" step="0.01" />
-            </label>
-
-            <label class="field">
-              <span>探索率衰减</span>
-              <input v-model.number="dqnConfig.epsilon_decay" type="number" min="0.8" max="1" step="0.001" />
-            </label>
-
-            <label class="field">
-              <span>每轮最大步数</span>
-              <input v-model.number="dqnConfig.max_steps_per_episode" type="number" min="10" max="400" />
-            </label>
-
-            <label class="field">
-              <span>批大小</span>
-              <input v-model.number="dqnConfig.batch_size" type="number" min="8" max="256" />
-            </label>
-
-            <label class="field">
-              <span>经验回放池</span>
-              <input v-model.number="dqnConfig.replay_buffer_size" type="number" min="200" max="50000" step="100" />
-            </label>
-
-            <label class="field">
-              <span>目标网络同步间隔</span>
-              <input v-model.number="dqnConfig.target_sync_interval" type="number" min="1" max="1000" />
-            </label>
-
-            <label class="field">
-              <span>预热步数</span>
-              <input v-model.number="dqnConfig.warmup_steps" type="number" min="1" max="5000" />
-            </label>
-
-            <label class="field">
-              <span>隐藏层维度</span>
-              <input v-model.number="dqnConfig.hidden_dim" type="number" min="16" max="512" />
             </label>
           </template>
 
           <template v-else>
             <label class="field">
-              <span>学习率</span>
-              <input v-model.number="reinforceConfig.learning_rate" type="number" min="0.001" max="0.1" step="0.001" />
+              <span>Learning Rate</span>
+              <input v-model.number="dqnConfig.learning_rate" type="number" min="0.0001" max="0.1" step="0.0001" />
             </label>
 
             <label class="field">
-              <span>折扣因子</span>
-              <input v-model.number="reinforceConfig.gamma" type="number" min="0.5" max="0.999" step="0.001" />
+              <span>Discount Factor</span>
+              <input v-model.number="dqnConfig.gamma" type="number" min="0.5" max="0.999" step="0.001" />
             </label>
 
             <label class="field">
-              <span>每轮最大步数</span>
-              <input v-model.number="reinforceConfig.max_steps_per_episode" type="number" min="10" max="400" />
+              <span>Epsilon Start</span>
+              <input v-model.number="dqnConfig.epsilon_start" type="number" min="0" max="1" step="0.01" />
             </label>
 
             <label class="field">
-              <span>隐藏层维度</span>
-              <input v-model.number="reinforceConfig.hidden_dim" type="number" min="16" max="512" />
+              <span>Epsilon Min</span>
+              <input v-model.number="dqnConfig.epsilon_min" type="number" min="0" max="1" step="0.01" />
+            </label>
+
+            <label class="field">
+              <span>Epsilon Decay</span>
+              <input v-model.number="dqnConfig.epsilon_decay" type="number" min="0.8" max="1" step="0.001" />
+            </label>
+
+            <label class="field">
+              <span>Max Steps / Episode</span>
+              <input v-model.number="dqnConfig.max_steps_per_episode" type="number" min="10" max="400" />
+            </label>
+
+            <label class="field">
+              <span>Batch Size</span>
+              <input v-model.number="dqnConfig.batch_size" type="number" min="8" max="256" />
+            </label>
+
+            <label class="field">
+              <span>Replay Buffer</span>
+              <input v-model.number="dqnConfig.replay_buffer_size" type="number" min="200" max="50000" step="100" />
+            </label>
+
+            <label class="field">
+              <span>Target Sync</span>
+              <input v-model.number="dqnConfig.target_sync_interval" type="number" min="1" max="1000" />
+            </label>
+
+            <label class="field">
+              <span>Warmup Steps</span>
+              <input v-model.number="dqnConfig.warmup_steps" type="number" min="1" max="5000" />
+            </label>
+
+            <label class="field">
+              <span>Hidden Dim</span>
+              <input v-model.number="dqnConfig.hidden_dim" type="number" min="16" max="512" />
             </label>
           </template>
 
-          <div class="section-title">训练配置</div>
+          <div class="section-title">Training</div>
 
           <label class="field">
-            <span>训练轮次</span>
+            <span>Episodes</span>
             <input v-model.number="training.episodes" type="number" min="20" max="2000" />
           </label>
 
           <label class="field">
-            <span>轨迹采样频率</span>
+            <span>Trace Frequency</span>
             <input v-model.number="training.trace_frequency" type="number" min="1" max="500" />
           </label>
 
           <label class="field">
-            <span>随机种子</span>
+            <span>Random Seed</span>
             <input v-model.number="training.seed" type="number" min="0" max="99999" />
           </label>
         </div>
@@ -1324,21 +1185,21 @@ function cancelTraining() {
         <div class="config-footer">
           <label class="checkbox">
             <input v-model="persistResult" type="checkbox" />
-            <span>将本次实验保存到本地历史记录</span>
+            <span>Persist this run to local history</span>
           </label>
 
           <div class="config-actions">
             <button type="button" class="ghost-button" :disabled="!canPauseStream" @click="pauseTraining">
-              暂停
+              Pause
             </button>
             <button type="button" class="ghost-button" :disabled="!canResumeStream" @click="resumeTraining">
-              继续
+              Resume
             </button>
             <button type="button" class="ghost-button ghost-button--danger" :disabled="!canCancelStream" @click="cancelTraining">
-              取消
+              Cancel
             </button>
             <button type="button" class="primary-button" :disabled="loading" @click="handleRunExperiment">
-              {{ loading ? '训练中...' : '运行实验' }}
+              {{ loading ? 'Training...' : 'Run Experiment' }}
             </button>
           </div>
         </div>
@@ -1349,12 +1210,12 @@ function cancelTraining() {
       <section class="panel panel--result">
         <div class="panel__heading">
           <div>
-            <p class="panel__eyebrow">结果面板</p>
-            <h2>查看收敛过程与学习策略</h2>
+            <p class="panel__eyebrow">Result Console</p>
+            <h2>Inspect convergence and learned policy</h2>
           </div>
           <div class="panel__heading-actions">
             <button type="button" class="ghost-button" :disabled="!canExportReport" @click="exportExperimentReport">
-              {{ reportExporting ? '导出中...' : '导出报告' }}
+              {{ reportExporting ? 'Exporting...' : 'Export Report' }}
             </button>
             <div v-if="activeRunId" class="run-tag">{{ activeRunId }}</div>
           </div>
@@ -1370,7 +1231,7 @@ function cancelTraining() {
 
           <div v-if="loading" class="stream-banner">
             <div class="stream-banner__row">
-              <strong>流式训练进度 | {{ streamStateLabel }}</strong>
+              <strong>Streaming training progress | {{ streamStateLabel }}</strong>
               <span>{{ Math.round(liveProgress * 100) }}%</span>
             </div>
             <div class="stream-banner__track">
@@ -1382,7 +1243,7 @@ function cancelTraining() {
           <section v-if="selectedBenchmark" class="analysis-card analysis-card--benchmark">
             <div class="analysis-card__header">
               <div>
-                <p class="panel__eyebrow">教师评估</p>
+                <p class="panel__eyebrow">Teacher Evaluation</p>
                 <h3>{{ selectedBenchmark.name }}</h3>
               </div>
               <span
@@ -1390,7 +1251,7 @@ function cancelTraining() {
                 class="benchmark-badge"
                 :class="benchmarkEvaluation.passed ? 'benchmark-badge--pass' : 'benchmark-badge--fail'"
               >
-                {{ benchmarkEvaluation.passed ? '通过' : '需改进' }}
+                {{ benchmarkEvaluation.passed ? 'Pass' : 'Needs Revision' }}
               </span>
             </div>
             <p class="analysis-note">{{ selectedBenchmark.teacher_note }}</p>
@@ -1404,47 +1265,47 @@ function cancelTraining() {
               >
                 <div class="benchmark-check__row">
                   <strong>{{ check.label }}</strong>
-                  <span>{{ check.passed ? '通过' : '未通过' }}</span>
+                  <span>{{ check.passed ? 'Pass' : 'Fail' }}</span>
                 </div>
-                <small>期望 {{ check.expected }} | 实际 {{ check.actual }}</small>
+                <small>Expected {{ check.expected }} | Actual {{ check.actual }}</small>
                 <p>{{ check.helpText }}</p>
               </article>
             </div>
             <div v-else class="comparison-empty benchmark-empty">
-              请先完整运行一次实验，再与所选教师基准进行评估。
+              Run a complete experiment to evaluate it against the selected teacher baseline.
             </div>
           </section>
 
           <div class="charts-grid">
-            <MetricChart title="单轮奖励" :series="rewardSeries" accent="#0f5bd8" />
-            <MetricChart title="探索率变化" :series="epsilonSeries" accent="#d97706" />
-            <MetricChart title="训练误差" :series="tdErrorSeries" accent="#0f766e" />
+            <MetricChart title="Episode Reward" :series="rewardSeries" accent="#0f5bd8" />
+            <MetricChart title="Exploration Rate" :series="epsilonSeries" accent="#d97706" />
+            <MetricChart title="TD Error" :series="tdErrorSeries" accent="#0f766e" />
           </div>
 
           <div class="analysis-grid">
             <section class="analysis-card">
               <div class="analysis-card__header">
                 <div>
-                  <p class="panel__eyebrow">策略视图</p>
-                  <h3>学习得到的贪心策略</h3>
+                  <p class="panel__eyebrow">Policy View</p>
+                  <h3>Learned greedy policy</h3>
                 </div>
               </div>
               <PolicyGrid v-if="finalPolicyGrid.length" :grid="finalPolicyGrid" />
-              <div v-else class="analysis-note">策略网格会在流式训练完成后生成。</div>
+              <div v-else class="analysis-note">Policy grid is generated after the streaming run finishes.</div>
             </section>
 
             <section class="analysis-card">
               <div class="analysis-card__header">
                 <div>
-                  <p class="panel__eyebrow">轨迹样本</p>
-                  <h3>最新采样路径</h3>
+                  <p class="panel__eyebrow">Trace Sample</p>
+                  <h3>Latest sampled path</h3>
                 </div>
               </div>
               <div class="trace-card">
                 <p v-if="latestTrace">
-                  第 {{ latestTrace.episode }} 轮 |
-                  {{ latestTrace.success ? '到达目标' : '未到达目标' }} |
-                  奖励 {{ latestTrace.total_reward }}
+                  Episode {{ latestTrace.episode }} |
+                  {{ latestTrace.success ? 'Goal reached' : 'Goal not reached' }} |
+                  Reward {{ latestTrace.total_reward }}
                 </p>
                 <code>{{ formatPath() }}</code>
               </div>
@@ -1454,8 +1315,8 @@ function cancelTraining() {
 
         <template v-else>
           <div class="placeholder">
-            <h3>当前还没有执行任何实验。</h3>
-            <p>请在左侧配置区提交 Q-Learning、SARSA、DQN 或 REINFORCE 实验，随后即可实时观察训练曲线变化。</p>
+            <h3>No experiment has been executed yet.</h3>
+            <p>Use the left-side designer to submit a Q-learning or DQN run and watch the curves update live.</p>
           </div>
         </template>
       </section>
@@ -1464,30 +1325,30 @@ function cancelTraining() {
     <section class="panel panel--support">
       <div class="support-grid">
         <article class="support-card">
-          <p class="panel__eyebrow">系统模块</p>
-          <h3>当前后端能力范围</h3>
+          <p class="panel__eyebrow">System Modules</p>
+          <h3>Current backend scope</h3>
           <ul>
-            <li>可配置 GridWorld 实验环境</li>
-            <li>Q-Learning 与 SARSA 训练服务</li>
-            <li>DQN 与 REINFORCE 训练服务</li>
-            <li>HTTP 与 WebSocket 实验接口</li>
+            <li>Configurable GridWorld environment</li>
+            <li>Q-learning training service</li>
+            <li>DQN training service with replay memory</li>
+            <li>HTTP and WebSocket experiment APIs</li>
           </ul>
         </article>
 
         <article class="support-card">
-          <p class="panel__eyebrow">后续扩展</p>
-          <h3>推荐的下一轮论文迭代方向</h3>
+          <p class="panel__eyebrow">Planned Upgrades</p>
+          <h3>Recommended next thesis iteration</h3>
           <ul>
-            <li>在当前视角切换基础上加入角色权限控制</li>
-            <li>补充完整实验回放控制能力</li>
-            <li>支持多作业层面的班级学习分析</li>
-            <li>增加教学评价量表与成绩导出功能</li>
+            <li>Add role-based access control beyond the current view switch</li>
+            <li>Add replay controls for finished runs</li>
+            <li>Add cohort-level learning analytics over multiple assignments</li>
+            <li>Add rubric and grade export for teaching assessment</li>
           </ul>
         </article>
 
         <article class="support-card">
-          <p class="panel__eyebrow">最近实验</p>
-          <h3>已保存的实验历史</h3>
+          <p class="panel__eyebrow">Recent Runs</p>
+          <h3>Saved experiment history</h3>
           <div v-if="history.length" class="history-list">
             <div v-for="item in history" :key="item.run_id" class="history-item">
               <label class="history-toggle">
@@ -1500,22 +1361,22 @@ function cancelTraining() {
               </label>
               <span v-if="item.assignment_title">{{ item.assignment_title }}</span>
               <span>{{ item.submitted_by }} | {{ roleLabel(item.submission_role) }}</span>
-              <span>{{ algorithmLabel(item.algorithm_id) }} | 平均奖励 {{ item.average_reward.toFixed(2) }}</span>
-              <span>成功率 {{ (item.success_rate * 100).toFixed(1) }}%</span>
+              <span>{{ algorithmLabel(item.algorithm_id) }} | avg {{ item.average_reward.toFixed(2) }}</span>
+              <span>success {{ (item.success_rate * 100).toFixed(1) }}%</span>
             </div>
           </div>
-          <p v-else class="history-empty">当前还没有保存的实验记录。</p>
+          <p v-else class="history-empty">No persisted runs yet.</p>
         </article>
       </div>
 
       <section v-if="showTeacherAnalytics" class="comparison-panel">
         <div class="panel__heading">
           <div>
-            <p class="panel__eyebrow">教师分析</p>
-            <h2>查看课堂实验情况与基准达成进度</h2>
+            <p class="panel__eyebrow">Teacher Analytics</p>
+            <h2>Review classroom activity and benchmark progress</h2>
           </div>
           <div class="comparison-meta">
-            <span>{{ analytics?.distinct_submitters ?? 0 }} 名提交人</span>
+            <span>{{ analytics?.distinct_submitters ?? 0 }} submitters</span>
           </div>
         </div>
 
@@ -1528,40 +1389,40 @@ function cancelTraining() {
           </div>
 
           <div v-if="analytics.benchmark" class="analysis-note analytics-note">
-            基准范围：{{ analytics.benchmark.benchmark_name }} |
-            {{ analytics.benchmark.pass_count }}/{{ analytics.benchmark.evaluated_runs }} 条符合条件的学生实验通过基准。
+            Benchmark scope: {{ analytics.benchmark.benchmark_name }} |
+            {{ analytics.benchmark.pass_count }}/{{ analytics.benchmark.evaluated_runs }} eligible student runs passed.
           </div>
 
           <div class="analytics-grid">
             <article class="support-card">
-              <p class="panel__eyebrow">作业分布</p>
-              <h3>按教学任务统计的实验记录</h3>
+              <p class="panel__eyebrow">Assignment Distribution</p>
+              <h3>Saved runs by teaching task</h3>
               <div class="analytics-list">
                 <div v-for="item in analytics.assignments" :key="item.assignment_id" class="analytics-item">
                   <div>
                     <strong>{{ item.assignment_title }}</strong>
                     <p>
-                      {{ item.run_count }} 次实验 | {{ item.student_runs }} 次学生实验 | 平均成功率
+                      {{ item.run_count }} runs | {{ item.student_runs }} student runs | avg success
                       {{ (item.average_success_rate * 100).toFixed(1) }}%
                     </p>
-                    <p>{{ item.distinct_submitters }} 名提交人 | 平均奖励 {{ item.average_reward.toFixed(2) }}</p>
+                    <p>{{ item.distinct_submitters }} submitters | avg reward {{ item.average_reward.toFixed(2) }}</p>
                   </div>
                   <span v-if="item.benchmark_pass_rate !== null && item.benchmark_pass_rate !== undefined" class="analytics-badge">
-                    通过率 {{ (item.benchmark_pass_rate * 100).toFixed(1) }}%
+                    pass {{ (item.benchmark_pass_rate * 100).toFixed(1) }}%
                   </span>
                 </div>
               </div>
             </article>
 
             <article class="support-card">
-              <p class="panel__eyebrow">算法分布</p>
-              <h3>按算法统计的实验记录</h3>
+              <p class="panel__eyebrow">Algorithm Distribution</p>
+              <h3>Saved runs by algorithm</h3>
               <div class="analytics-list">
                 <div v-for="item in analytics.algorithms" :key="item.algorithm_id" class="analytics-item">
                   <div>
                     <strong>{{ algorithmLabel(item.algorithm_id) }}</strong>
                     <p>
-                      {{ item.run_count }} 次实验 | 平均奖励 {{ item.average_reward.toFixed(2) }} | 平均成功率
+                      {{ item.run_count }} runs | avg reward {{ item.average_reward.toFixed(2) }} | avg success
                       {{ (item.average_success_rate * 100).toFixed(1) }}%
                     </p>
                   </div>
@@ -1570,20 +1431,20 @@ function cancelTraining() {
             </article>
 
             <article class="support-card">
-              <p class="panel__eyebrow">学生活跃情况</p>
-              <h3>最近学习者概览</h3>
+              <p class="panel__eyebrow">Student Activity</p>
+              <h3>Recent learner summary</h3>
               <div class="analytics-list">
                 <div v-for="item in analytics.students" :key="item.submitted_by" class="analytics-item">
                   <div>
                     <strong>{{ item.submitted_by }}</strong>
                     <p>
-                      {{ item.run_count }} 次实验 | 平均奖励 {{ item.average_reward.toFixed(2) }} | 最佳成功率
+                      {{ item.run_count }} runs | avg reward {{ item.average_reward.toFixed(2) }} | best success
                       {{ (item.best_success_rate * 100).toFixed(1) }}%
                     </p>
-                    <p>最近活动时间 {{ formatTimestamp(item.latest_created_at) }}</p>
+                    <p>Latest activity {{ formatTimestamp(item.latest_created_at) }}</p>
                   </div>
                   <span v-if="item.benchmark_pass_count !== null && item.benchmark_pass_count !== undefined" class="analytics-badge">
-                    基准通过 {{ item.benchmark_pass_count }}
+                    benchmark pass {{ item.benchmark_pass_count }}
                   </span>
                 </div>
               </div>
@@ -1593,15 +1454,15 @@ function cancelTraining() {
 
         <template v-else-if="analyticsLoading">
           <div class="comparison-empty">
-            <h3>正在加载课堂分析数据。</h3>
-            <p>教师面板正在读取已保存的实验历史和基准评估结果。</p>
+            <h3>Loading classroom analytics.</h3>
+            <p>The teacher dashboard is reading saved experiment history and benchmark outcomes.</p>
           </div>
         </template>
 
         <template v-else>
           <div class="comparison-empty">
-            <h3>当前没有可用的课堂分析数据。</h3>
-            <p>请先保存几条学生实验记录，再切换到教师视角查看聚合结果。</p>
+            <h3>No classroom analytics available.</h3>
+            <p>Persist a few student runs first, then switch to teacher view to inspect aggregated results.</p>
           </div>
         </template>
       </section>
@@ -1609,18 +1470,18 @@ function cancelTraining() {
       <section class="comparison-panel">
         <div class="panel__heading">
           <div>
-            <p class="panel__eyebrow">轨迹回放</p>
-            <h2>逐步回放采样轨迹</h2>
+            <p class="panel__eyebrow">Replay Lab</p>
+            <h2>Replay sampled trajectories step by step</h2>
           </div>
           <div class="comparison-meta">
-            <span>已加载 {{ replayRuns.length }} 条</span>
+            <span>{{ replayRuns.length }} loaded</span>
           </div>
         </div>
 
         <template v-if="replayRuns.length && replayActiveTrace">
           <div class="replay-toolbar">
             <label class="field">
-              <span>回放来源</span>
+              <span>Replay Source</span>
               <select v-model="replaySourceRunId" class="field__select">
                 <option v-for="result in replayRuns" :key="result.run_id" :value="result.run_id">
                   {{ formatReplayRunLabel(result) }}
@@ -1629,10 +1490,10 @@ function cancelTraining() {
             </label>
 
             <label class="field">
-              <span>采样轮次</span>
+              <span>Sampled Episode</span>
               <select v-model.number="replayTraceEpisode" class="field__select">
                 <option v-for="trace in replayTraceOptions" :key="trace.episode" :value="trace.episode">
-                  第 {{ trace.episode }} 轮 | {{ trace.success ? '到达目标' : '未到达目标' }}
+                  Episode {{ trace.episode }} | {{ trace.success ? 'Goal reached' : 'Goal not reached' }}
                 </option>
               </select>
             </label>
@@ -1640,26 +1501,26 @@ function cancelTraining() {
 
           <div class="replay-controls">
             <button type="button" class="ghost-button" :disabled="!canStepReplayBackward" @click="stepReplay(-1)">
-              后退一步
+              Step Back
             </button>
             <button type="button" class="ghost-button" :disabled="replayPathLength <= 1" @click="toggleReplay">
-              {{ replayPlaying ? '暂停回放' : '开始回放' }}
+              {{ replayPlaying ? 'Pause Replay' : 'Play Replay' }}
             </button>
             <button type="button" class="ghost-button" :disabled="!canStepReplayForward" @click="stepReplay(1)">
-              前进一步
+              Step Forward
             </button>
             <button type="button" class="ghost-button" :disabled="!replayPathLength" @click="resetReplay">
-              重新开始
+              Restart
             </button>
           </div>
 
           <div class="replay-meta">
             <span>{{ replayProgressLabel }}</span>
             <span v-if="replayCurrentCell">
-              当前单元 ({{ replayCurrentCell.row }}, {{ replayCurrentCell.col }})
+              Current Cell ({{ replayCurrentCell.row }}, {{ replayCurrentCell.col }})
             </span>
             <span>
-              第 {{ replayActiveTrace.episode }} 轮 | {{ replayActiveTrace.success ? '到达目标' : '未到达目标' }}
+              Episode {{ replayActiveTrace.episode }} | {{ replayActiveTrace.success ? 'Goal reached' : 'Goal not reached' }}
             </span>
           </div>
 
@@ -1667,8 +1528,8 @@ function cancelTraining() {
             <section class="analysis-card">
               <div class="analysis-card__header">
                 <div>
-                  <p class="panel__eyebrow">回放网格</p>
-                  <h3>动态采样轨迹</h3>
+                  <p class="panel__eyebrow">Replay Grid</p>
+                  <h3>Animated sampled trajectory</h3>
                 </div>
               </div>
               <TraceReplayGrid
@@ -1681,14 +1542,14 @@ function cancelTraining() {
             <section class="analysis-card">
               <div class="analysis-card__header">
                 <div>
-                  <p class="panel__eyebrow">回放详情</p>
-                  <h3>路径与奖励信息</h3>
+                  <p class="panel__eyebrow">Replay Detail</p>
+                  <h3>Path and reward context</h3>
                 </div>
               </div>
               <div class="trace-card">
                 <p>
-                  总奖励 {{ replayActiveTrace.total_reward }} |
-                  {{ replayActiveTrace.success ? '终点成功' : '终点失败' }}
+                  Total reward {{ replayActiveTrace.total_reward }} |
+                  {{ replayActiveTrace.success ? 'Terminal success' : 'Terminal failure' }}
                 </p>
                 <code>{{ formatReplayPath() }}</code>
               </div>
@@ -1698,8 +1559,8 @@ function cancelTraining() {
 
         <template v-else>
           <div class="comparison-empty">
-            <h3>当前没有可用的回放来源。</h3>
-            <p>请先运行实验，或从历史记录中选择已保存实验以开启轨迹回放。</p>
+            <h3>No replay source available.</h3>
+            <p>Run an experiment or select saved runs from history to open trajectory replay.</p>
           </div>
         </template>
       </section>
@@ -1707,11 +1568,11 @@ function cancelTraining() {
       <section class="comparison-panel">
         <div class="panel__heading">
           <div>
-            <p class="panel__eyebrow">实验对比</p>
-            <h2>对比历史实验与当前结果</h2>
+            <p class="panel__eyebrow">Comparison Lab</p>
+            <h2>Compare saved runs and current output</h2>
           </div>
           <div class="comparison-meta">
-            <span>已加载 {{ compareRuns.length }} 条</span>
+            <span>{{ compareRuns.length }} loaded</span>
           </div>
         </div>
 
@@ -1721,23 +1582,24 @@ function cancelTraining() {
               <span>{{ row.label }}</span>
               <strong>{{ row.algorithm }}</strong>
               <small>
-                平均 {{ row.averageReward }} | 最佳 {{ row.bestReward }} | 成功率 {{ row.successRate }} |
-                {{ row.episodes }} 轮
+                avg {{ row.averageReward }} | best {{ row.bestReward }} | success {{ row.successRate }} |
+                {{ row.episodes }} eps
               </small>
             </article>
           </div>
 
           <div class="comparison-grid">
-            <ComparisonChart title="奖励趋势对比" :series="compareRewardSeries" />
-            <ComparisonChart title="单轮成功情况对比" :series="compareSuccessSeries" />
+            <ComparisonChart title="Reward Trend Comparison" :series="compareRewardSeries" />
+            <ComparisonChart title="Episode Success Comparison" :series="compareSuccessSeries" />
           </div>
         </template>
 
         <template v-else>
           <div class="comparison-empty">
-            <h3>至少需要两条实验记录才能进行对比。</h3>
+            <h3>Comparison needs at least two runs.</h3>
             <p>
-              请从历史记录中选择一条或多条已保存实验；如果当前结果可见，它会被自动加入对比。
+              Select one or more saved runs from history. If a current run is visible, it will be included
+              automatically.
             </p>
           </div>
         </template>
