@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 def default_obstacles() -> list["GridPosition"]:
@@ -25,6 +25,9 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+EnvironmentId: TypeAlias = Literal["gridworld", "cliffwalking", "windygridworld"]
+
+
 class GridPosition(StrictModel):
     row: int = Field(ge=0, le=19)
     col: int = Field(ge=0, le=19)
@@ -37,16 +40,64 @@ class RewardConfig(StrictModel):
     trap_penalty: float = -10.0
 
 
-class GridWorldConfig(StrictModel):
-    size: int = Field(default=6, ge=4, le=12)
+class CliffRewardConfig(StrictModel):
+    step_penalty: float = -1.0
+    goal_reward: float = 0.0
+    wall_penalty: float = -1.0
+    cliff_penalty: float = -100.0
+
+
+class WindyRewardConfig(StrictModel):
+    step_penalty: float = -1.0
+    goal_reward: float = 0.0
+    wall_penalty: float = -1.0
+
+
+class EnvironmentConfigBase(StrictModel):
+    environment_id: EnvironmentId
+
+
+class GridWorldConfig(EnvironmentConfigBase):
+    environment_id: Literal["gridworld"] = "gridworld"
+    rows: int = Field(default=6, ge=4, le=12)
+    cols: int = Field(default=6, ge=4, le=12)
     start: GridPosition = Field(default_factory=lambda: GridPosition(row=0, col=0))
     goal: GridPosition = Field(default_factory=lambda: GridPosition(row=5, col=5))
     obstacles: list[GridPosition] = Field(default_factory=default_obstacles)
     traps: list[GridPosition] = Field(default_factory=default_traps)
     rewards: RewardConfig = Field(default_factory=RewardConfig)
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_size(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+        size = payload.pop("size", None)
+        if size is not None:
+            payload.setdefault("rows", size)
+            payload.setdefault("cols", size)
+
+        payload.setdefault("environment_id", "gridworld")
+
+        rows = payload.get("rows", 6)
+        cols = payload.get("cols", 6)
+
+        if "goal" not in payload:
+            payload["goal"] = {"row": rows - 1, "col": cols - 1}
+        if "obstacles" not in payload:
+            payload["obstacles"] = default_obstacles() if rows == 6 and cols == 6 else []
+        if "traps" not in payload:
+            payload["traps"] = default_traps() if rows == 6 and cols == 6 else []
+
+        return payload
+
     @model_validator(mode="after")
     def validate_cells(self) -> "GridWorldConfig":
+        if self.rows != self.cols:
+            raise ValueError("gridworld currently requires rows and cols to be equal")
+
         reserved: dict[tuple[int, int], str] = {}
 
         for label, cell in [("start", self.start), ("goal", self.goal)]:
@@ -63,9 +114,140 @@ class GridWorldConfig(StrictModel):
 
         return self
 
+    @computed_field(return_type=int)
+    @property
+    def size(self) -> int:
+        return self.rows
+
     def _assert_in_bounds(self, label: str, cell: GridPosition) -> None:
-        if cell.row >= self.size or cell.col >= self.size:
-            raise ValueError(f"{label} cell ({cell.row}, {cell.col}) is outside a {self.size}x{self.size} grid")
+        if cell.row >= self.rows or cell.col >= self.cols:
+            raise ValueError(f"{label} cell ({cell.row}, {cell.col}) is outside a {self.rows}x{self.cols} grid")
+
+
+def default_cliff_cells_for_shape(rows: int, cols: int) -> list[GridPosition]:
+    if rows < 1 or cols < 3:
+        return []
+    cliff_row = rows - 1
+    return [GridPosition(row=cliff_row, col=col) for col in range(1, cols - 1)]
+
+
+class CliffWalkingConfig(EnvironmentConfigBase):
+    environment_id: Literal["cliffwalking"] = "cliffwalking"
+    rows: int = Field(default=4, ge=4, le=12)
+    cols: int = Field(default=12, ge=4, le=20)
+    start: GridPosition = Field(default_factory=lambda: GridPosition(row=3, col=0))
+    goal: GridPosition = Field(default_factory=lambda: GridPosition(row=3, col=11))
+    cliffs: list[GridPosition] = Field(default_factory=lambda: default_cliff_cells_for_shape(4, 12))
+    rewards: CliffRewardConfig = Field(default_factory=CliffRewardConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_defaults(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+        payload.setdefault("environment_id", "cliffwalking")
+
+        rows = payload.get("rows", 4)
+        cols = payload.get("cols", 12)
+
+        if "start" not in payload:
+            payload["start"] = {"row": rows - 1, "col": 0}
+        if "goal" not in payload:
+            payload["goal"] = {"row": rows - 1, "col": cols - 1}
+        if "cliffs" not in payload:
+            payload["cliffs"] = default_cliff_cells_for_shape(rows, cols)
+
+        return payload
+
+    @model_validator(mode="after")
+    def validate_cells(self) -> "CliffWalkingConfig":
+        reserved: dict[tuple[int, int], str] = {}
+
+        for label, cell in [("start", self.start), ("goal", self.goal)]:
+            self._assert_in_bounds(label, cell)
+            reserved[(cell.row, cell.col)] = label
+
+        for cell in self.cliffs:
+            self._assert_in_bounds("cliff", cell)
+            key = (cell.row, cell.col)
+            if key in reserved:
+                raise ValueError(f"cliff cell {key} overlaps with {reserved[key]}")
+            reserved[key] = "cliff"
+
+        return self
+
+    def _assert_in_bounds(self, label: str, cell: GridPosition) -> None:
+        if cell.row >= self.rows or cell.col >= self.cols:
+            raise ValueError(f"{label} cell ({cell.row}, {cell.col}) is outside a {self.rows}x{self.cols} grid")
+
+
+def default_windy_start(rows: int) -> GridPosition:
+    return GridPosition(row=min(3, rows - 1), col=0)
+
+
+def default_windy_goal(rows: int, cols: int) -> GridPosition:
+    return GridPosition(row=min(3, rows - 1), col=min(7, cols - 1))
+
+
+def default_wind_strengths_for_cols(cols: int) -> list[int]:
+    base = [0, 0, 0, 1, 1, 1, 2, 2, 1, 0]
+    if cols <= len(base):
+        return base[:cols]
+    return [*base, *([0] * (cols - len(base)))]
+
+
+class WindyGridWorldConfig(EnvironmentConfigBase):
+    environment_id: Literal["windygridworld"] = "windygridworld"
+    rows: int = Field(default=7, ge=4, le=12)
+    cols: int = Field(default=10, ge=5, le=20)
+    start: GridPosition = Field(default_factory=lambda: default_windy_start(7))
+    goal: GridPosition = Field(default_factory=lambda: default_windy_goal(7, 10))
+    wind_strengths: list[int] = Field(default_factory=lambda: default_wind_strengths_for_cols(10))
+    rewards: WindyRewardConfig = Field(default_factory=WindyRewardConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_defaults(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+        payload.setdefault("environment_id", "windygridworld")
+
+        rows = payload.get("rows", 7)
+        cols = payload.get("cols", 10)
+
+        if "start" not in payload:
+            start = default_windy_start(rows)
+            payload["start"] = {"row": start.row, "col": start.col}
+        if "goal" not in payload:
+            goal = default_windy_goal(rows, cols)
+            payload["goal"] = {"row": goal.row, "col": goal.col}
+        if "wind_strengths" not in payload:
+            payload["wind_strengths"] = default_wind_strengths_for_cols(cols)
+
+        return payload
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "WindyGridWorldConfig":
+        self._assert_in_bounds("start", self.start)
+        self._assert_in_bounds("goal", self.goal)
+        if (self.start.row, self.start.col) == (self.goal.row, self.goal.col):
+            raise ValueError("start and goal cannot be the same cell")
+        if len(self.wind_strengths) != self.cols:
+            raise ValueError(f"wind_strengths length {len(self.wind_strengths)} does not match cols={self.cols}")
+        for index, strength in enumerate(self.wind_strengths):
+            if strength < 0:
+                raise ValueError(f"wind_strengths[{index}] must be greater than or equal to 0")
+            if strength >= self.rows:
+                raise ValueError(f"wind_strengths[{index}]={strength} is too large for rows={self.rows}")
+        return self
+
+    def _assert_in_bounds(self, label: str, cell: GridPosition) -> None:
+        if cell.row >= self.rows or cell.col >= self.cols:
+            raise ValueError(f"{label} cell ({cell.row}, {cell.col}) is outside a {self.rows}x{self.cols} grid")
 
 
 class QLearningConfig(StrictModel):
@@ -125,40 +307,67 @@ class TrainingConfig(StrictModel):
 
 
 SubmissionRole: TypeAlias = Literal["teacher", "student"]
+EnvironmentConfig: TypeAlias = Annotated[
+    GridWorldConfig | CliffWalkingConfig | WindyGridWorldConfig,
+    Field(discriminator="environment_id"),
+]
 
 
 class ExperimentRequestBase(StrictModel):
-    name: str = Field(default="GridWorld Experiment", min_length=3, max_length=80)
+    name: str = Field(default="Reinforcement Learning Experiment", min_length=3, max_length=80)
     submitted_by: str = Field(default="Anonymous Student", min_length=2, max_length=40)
     submission_role: SubmissionRole = "student"
     assignment_id: str | None = Field(default=None, max_length=60)
     assignment_title: str | None = Field(default=None, max_length=120)
-    environment_id: Literal["gridworld"] = "gridworld"
+    environment_id: EnvironmentId = "gridworld"
     persist_result: bool = True
-    env_config: GridWorldConfig = Field(default_factory=GridWorldConfig)
+    env_config: EnvironmentConfig = Field(default_factory=GridWorldConfig)
     training: TrainingConfig = Field(default_factory=TrainingConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_env_config_discriminator(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+        env_config = payload.get("env_config")
+        environment_id = payload.get("environment_id", "gridworld")
+        if isinstance(env_config, dict) and "environment_id" not in env_config:
+            nested_config = dict(env_config)
+            nested_config["environment_id"] = environment_id
+            payload["env_config"] = nested_config
+        return payload
+
+    @model_validator(mode="after")
+    def validate_environment_binding(self) -> "ExperimentRequestBase":
+        if self.environment_id != self.env_config.environment_id:
+            raise ValueError(
+                f"environment_id '{self.environment_id}' does not match env_config '{self.env_config.environment_id}'"
+            )
+        return self
 
 
 class QLearningExperimentRequest(ExperimentRequestBase):
-    name: str = Field(default="GridWorld Q-Learning Demo", min_length=3, max_length=80)
+    name: str = Field(default="Q-Learning Demo", min_length=3, max_length=80)
     algorithm_id: Literal["q_learning"] = "q_learning"
     algorithm_config: QLearningConfig = Field(default_factory=QLearningConfig)
 
 
 class SARSAExperimentRequest(ExperimentRequestBase):
-    name: str = Field(default="GridWorld SARSA Demo", min_length=3, max_length=80)
+    name: str = Field(default="SARSA Demo", min_length=3, max_length=80)
     algorithm_id: Literal["sarsa"] = "sarsa"
     algorithm_config: SARSAConfig = Field(default_factory=SARSAConfig)
 
 
 class DQNExperimentRequest(ExperimentRequestBase):
-    name: str = Field(default="GridWorld DQN Demo", min_length=3, max_length=80)
+    name: str = Field(default="DQN Demo", min_length=3, max_length=80)
     algorithm_id: Literal["dqn"] = "dqn"
     algorithm_config: DQNConfig = Field(default_factory=DQNConfig)
 
 
 class ReinforceExperimentRequest(ExperimentRequestBase):
-    name: str = Field(default="GridWorld REINFORCE Demo", min_length=3, max_length=80)
+    name: str = Field(default="REINFORCE Demo", min_length=3, max_length=80)
     algorithm_id: Literal["reinforce"] = "reinforce"
     algorithm_config: ReinforceConfig = Field(default_factory=ReinforceConfig)
 
@@ -195,6 +404,25 @@ class ExperimentSummary(StrictModel):
     stable_success_rate: float
 
 
+class GridEnvironmentView(StrictModel):
+    view_type: Literal["grid"] = "grid"
+    rows: int = Field(ge=1, le=40)
+    cols: int = Field(ge=1, le=40)
+    cells: list[list[str]]
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "GridEnvironmentView":
+        if len(self.cells) != self.rows:
+            raise ValueError(f"environment_view row count {len(self.cells)} does not match rows={self.rows}")
+        for row in self.cells:
+            if len(row) != self.cols:
+                raise ValueError(f"environment_view column count {len(row)} does not match cols={self.cols}")
+        return self
+
+
+EnvironmentView: TypeAlias = GridEnvironmentView
+
+
 class ExperimentResult(StrictModel):
     run_id: str
     created_at: str
@@ -203,7 +431,38 @@ class ExperimentResult(StrictModel):
     summary: ExperimentSummary
     metrics: list[EpisodeMetric]
     path_traces: list[PathTrace]
-    policy_grid: list[list[str]]
+    environment_view: EnvironmentView | None = None
+    policy_grid: list[list[str]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_rendering(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+        policy_grid = payload.get("policy_grid")
+        environment_view = payload.get("environment_view")
+
+        if environment_view is None and policy_grid:
+            rows = len(policy_grid)
+            cols = max((len(row) for row in policy_grid), default=0)
+            payload["environment_view"] = {
+                "view_type": "grid",
+                "rows": rows,
+                "cols": cols,
+                "cells": policy_grid,
+            }
+            return payload
+
+        if "policy_grid" not in payload and environment_view is not None:
+            if isinstance(environment_view, GridEnvironmentView):
+                if environment_view.view_type == "grid":
+                    payload["policy_grid"] = environment_view.cells
+            elif isinstance(environment_view, dict) and environment_view.get("view_type") == "grid":
+                payload["policy_grid"] = environment_view.get("cells", [])
+
+        return payload
 
 
 class ExperimentHistoryEntry(StrictModel):

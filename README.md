@@ -4,20 +4,21 @@
 
 ## 当前范围
 
-- `backend/`：基于 FastAPI 的后端服务，包含实验数据结构、可配置的 GridWorld 环境，以及可运行的 Q-learning 和 DQN 训练流程。
+- `backend/`：基于 FastAPI 的后端服务，包含实验数据结构、可配置的 GridWorld、CliffWalking 与 WindyGridWorld 环境，以及可运行的 Q-learning、SARSA、DQN 和 REINFORCE 训练流程。
 - `frontend/`：基于 Vue 3 的单页界面，用于实验配置、执行控制、算法切换和结果可视化。
 - `docs/`：可直接复用于论文写作的系统架构说明。
 - `data/`：运行期输出目录，用于保存实验结果。
 
 ## 当前实现功能
 
-- 面向 GridWorld 教学场景的表单化实验设计
-- 支持参数化配置的 Q-learning 和 DQN
+- 面向 GridWorld、CliffWalking 与 WindyGridWorld 教学场景的表单化实验设计
+- 支持参数化配置的 Q-learning、SARSA、DQN 和 REINFORCE
 - 基于 WebSocket 的训练指标实时推送
 - 支持流式训练的暂停、继续和取消控制
 - 输出奖励值、epsilon 和 TD 误差等训练指标
 - 教师基准预设及一键参数加载
 - 内置可复用任务元数据的教学作业模板
+- 支持按环境维度区分的教师基准、作业模板和课堂分析
 - 基于教师阈值的基准通过/未通过评估
 - 已完成实验的 Markdown 教学报告导出
 - 含教师/学生角色信息的提交元数据与课堂记录
@@ -26,6 +27,7 @@
 - 已保存实验的多次运行对比面板
 - 基于 SQLite 的实验持久化，并兼容旧版 JSON 导入
 - 训练后策略网格渲染
+- 支持矩形网格、悬崖单元、风力列提示和轨迹回放的环境可视化
 - 最近实验的历史记录保存
 
 ## 启动后端

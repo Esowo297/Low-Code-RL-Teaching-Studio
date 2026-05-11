@@ -12,7 +12,7 @@ from app.schemas.experiment import (
     StudentAnalyticsEntry,
 )
 from app.services.assignments import get_assignment_preset
-from app.services.benchmarks import get_benchmark_preset, passes_benchmark_preset
+from app.services.benchmarks import get_benchmark_preset, matches_environment_config, passes_benchmark_preset
 
 
 def build_classroom_analytics(
@@ -77,7 +77,11 @@ def _build_benchmark_summary(
 
     benchmark = get_benchmark_preset(benchmark_id)
     eligible_runs = [
-        result for result in student_results if result.request.algorithm_id == benchmark.request.algorithm_id
+        result
+        for result in student_results
+        if result.request.algorithm_id == benchmark.request.algorithm_id
+        and result.request.environment_id == benchmark.request.environment_id
+        and matches_environment_config(result.request.env_config, benchmark.request.env_config)
     ]
     pass_by_student: dict[str, int] = defaultdict(int)
     pass_count = 0
@@ -113,8 +117,16 @@ def _build_assignment_entries(results: list[ExperimentResult]) -> list[Assignmen
         benchmark_pass_rate = None
         if benchmark_id and student_items:
             benchmark = get_benchmark_preset(benchmark_id)
-            pass_count = sum(1 for item in student_items if passes_benchmark_preset(item, benchmark))
-            benchmark_pass_rate = round(pass_count / len(student_items), 4)
+            eligible_items = [
+                item
+                for item in student_items
+                if item.request.algorithm_id == benchmark.request.algorithm_id
+                and item.request.environment_id == benchmark.request.environment_id
+                and matches_environment_config(item.request.env_config, benchmark.request.env_config)
+            ]
+            if eligible_items:
+                pass_count = sum(1 for item in eligible_items if passes_benchmark_preset(item, benchmark))
+                benchmark_pass_rate = round(pass_count / len(eligible_items), 4)
 
         entries.append(
             AssignmentAnalyticsEntry(

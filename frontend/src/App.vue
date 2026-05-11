@@ -25,15 +25,20 @@ import type {
   BenchmarkPreset,
   BenchmarkThreshold,
   CatalogResponse,
+  CliffRewardConfig,
+  CliffWalkingConfig,
   ComparisonSeries,
   DQNConfig,
   DQNExperimentRequest,
+  EnvironmentConfig,
+  EnvironmentId,
   EpisodeMetric,
   ExperimentControlEvent,
   ExperimentRequest,
   ExperimentResult,
   ExperimentStartedEvent,
   GridPosition,
+  GridWorldConfig,
   HistoryEntry,
   PathTrace,
   QLearningConfig,
@@ -43,6 +48,8 @@ import type {
   SARSAConfig,
   SARSAExperimentRequest,
   SubmissionRole,
+  WindyGridWorldConfig,
+  WindyRewardConfig,
 } from './types'
 
 interface BenchmarkCheckRow {
@@ -70,6 +77,7 @@ const analyticsLoading = ref(false)
 const errorMessage = ref('')
 const streamNotice = ref('')
 const selectedAlgorithm = ref<AlgorithmId>('q_learning')
+const selectedEnvironment = ref<EnvironmentId>('gridworld')
 const streamState = ref<'idle' | 'running' | 'paused' | 'cancelling'>('idle')
 const liveRunId = ref('')
 const liveMetrics = ref<EpisodeMetric[]>([])
@@ -96,22 +104,47 @@ let replayTimer: number | null = null
 
 const obstacleText = ref('1:2,2:2,4:2,4:3')
 const trapText = ref('2:4,4:1')
+const cliffText = ref('3:1,3:2,3:3,3:4,3:5,3:6,3:7,3:8,3:9,3:10')
+const windStrengthText = ref('0,0,0,1,1,1,2,2,1,0')
 const experimentName = ref('GridWorld Q-Learning 演示')
 const persistResult = ref(true)
 const comparisonPalette = ['#0f5bd8', '#d97706', '#0f766e', '#b42318']
 
-const envConfig = reactive({
+const gridEnvConfig = reactive({
   size: 6,
   start: { row: 0, col: 0 },
   goal: { row: 5, col: 5 },
-  obstacles: [] as GridPosition[],
-  traps: [] as GridPosition[],
   rewards: {
     step_penalty: -1,
     goal_reward: 20,
     wall_penalty: -3,
     trap_penalty: -10,
   },
+})
+
+const cliffEnvConfig = reactive({
+  rows: 4,
+  cols: 12,
+  start: { row: 3, col: 0 },
+  goal: { row: 3, col: 11 },
+  rewards: {
+    step_penalty: -1,
+    goal_reward: 0,
+    wall_penalty: -1,
+    cliff_penalty: -100,
+  } satisfies CliffRewardConfig,
+})
+
+const windyEnvConfig = reactive({
+  rows: 7,
+  cols: 10,
+  start: { row: 3, col: 0 },
+  goal: { row: 3, col: 7 },
+  rewards: {
+    step_penalty: -1,
+    goal_reward: 0,
+    wall_penalty: -1,
+  } satisfies WindyRewardConfig,
 })
 
 const training = reactive({
@@ -159,17 +192,89 @@ const reinforceConfig = reactive<ReinforceConfig>({
   hidden_dim: 64,
 })
 
-function defaultExperimentName(algorithmId: AlgorithmId) {
+function environmentLabel(environmentId: EnvironmentId) {
+  if (environmentId === 'cliffwalking') {
+    return 'CliffWalking'
+  }
+  if (environmentId === 'windygridworld') {
+    return 'WindyGridWorld'
+  }
+  return 'GridWorld'
+}
+
+function defaultCliffCells(rows: number, cols: number): GridPosition[] {
+  if (rows < 1 || cols < 3) {
+    return []
+  }
+
+  const cliffRow = rows - 1
+  return Array.from({ length: cols - 2 }, (_, index) => ({
+    row: cliffRow,
+    col: index + 1,
+  }))
+}
+
+function defaultWindStrengths(cols: number) {
+  const base = [0, 0, 0, 1, 1, 1, 2, 2, 1, 0]
+  if (cols <= base.length) {
+    return base.slice(0, cols)
+  }
+  return [...base, ...Array.from({ length: cols - base.length }, () => 0)]
+}
+
+function resetGridEnvironment() {
+  gridEnvConfig.size = 6
+  gridEnvConfig.start = { row: 0, col: 0 }
+  gridEnvConfig.goal = { row: 5, col: 5 }
+  gridEnvConfig.rewards = {
+    step_penalty: -1,
+    goal_reward: 20,
+    wall_penalty: -3,
+    trap_penalty: -10,
+  }
+  obstacleText.value = '1:2,2:2,4:2,4:3'
+  trapText.value = '2:4,4:1'
+}
+
+function resetCliffEnvironment() {
+  cliffEnvConfig.rows = 4
+  cliffEnvConfig.cols = 12
+  cliffEnvConfig.start = { row: 3, col: 0 }
+  cliffEnvConfig.goal = { row: 3, col: 11 }
+  cliffEnvConfig.rewards = {
+    step_penalty: -1,
+    goal_reward: 0,
+    wall_penalty: -1,
+    cliff_penalty: -100,
+  }
+  cliffText.value = serializeCellList(defaultCliffCells(cliffEnvConfig.rows, cliffEnvConfig.cols))
+}
+
+function resetWindyEnvironment() {
+  windyEnvConfig.rows = 7
+  windyEnvConfig.cols = 10
+  windyEnvConfig.start = { row: 3, col: 0 }
+  windyEnvConfig.goal = { row: 3, col: 7 }
+  windyEnvConfig.rewards = {
+    step_penalty: -1,
+    goal_reward: 0,
+    wall_penalty: -1,
+  }
+  windStrengthText.value = serializeWindStrengths(defaultWindStrengths(windyEnvConfig.cols))
+}
+
+function nextExperimentName(algorithmId: AlgorithmId, environmentId: EnvironmentId = selectedEnvironment.value) {
+  const environmentName = environmentLabel(environmentId)
   if (algorithmId === 'q_learning') {
-    return 'GridWorld Q-Learning 演示'
+    return `${environmentName} Q-Learning 演示`
   }
   if (algorithmId === 'sarsa') {
-    return 'GridWorld SARSA 演示'
+    return `${environmentName} SARSA 演示`
   }
   if (algorithmId === 'dqn') {
-    return 'GridWorld DQN 演示'
+    return `${environmentName} DQN 演示`
   }
-  return 'GridWorld REINFORCE 演示'
+  return `${environmentName} REINFORCE 演示`
 }
 
 const heroMetrics = computed(() => [
@@ -208,11 +313,16 @@ const summaryCards = computed(() => {
 
 const latestTrace = computed(() => currentResult.value?.path_traces.at(-1) ?? liveLatestTrace.value)
 const algorithmOptions = computed(() => catalog.value?.algorithms ?? [])
-const assignmentOptions = computed(() => assignmentCatalog.value?.assignments ?? [])
+const environmentOptions = computed(() => catalog.value?.environments ?? [])
+const assignmentOptions = computed(() =>
+  (assignmentCatalog.value?.assignments ?? []).filter((assignment) => assignment.request.environment_id === selectedEnvironment.value),
+)
 const selectedAssignment = computed<AssignmentPreset | null>(
   () => assignmentOptions.value.find((assignment) => assignment.id === selectedAssignmentId.value) ?? null,
 )
-const benchmarkOptions = computed(() => benchmarkCatalog.value?.benchmarks ?? [])
+const benchmarkOptions = computed(() =>
+  (benchmarkCatalog.value?.benchmarks ?? []).filter((benchmark) => benchmark.request.environment_id === selectedEnvironment.value),
+)
 const effectiveBenchmarkId = computed(() => {
   if (selectedBenchmarkId.value) {
     return selectedBenchmarkId.value
@@ -225,7 +335,9 @@ const selectedBenchmark = computed<BenchmarkPreset | null>(
 const activeRunId = computed(() => currentResult.value?.run_id ?? liveRunId.value)
 const showResults = computed(() => Boolean(currentResult.value || liveMetrics.value.length || loading.value))
 const showTeacherAnalytics = computed(() => viewerRole.value === 'teacher')
-const finalPolicyGrid = computed(() => currentResult.value?.policy_grid ?? [])
+const finalPolicyGrid = computed(() => resultGrid(currentResult.value))
+const policyGridColumnCount = computed(() => Math.max(finalPolicyGrid.value[0]?.length ?? 0, 0))
+const widePolicyGrid = computed(() => policyGridColumnCount.value >= 10)
 const canExportReport = computed(() => Boolean(currentResult.value) && !loading.value && !reportExporting.value)
 const canPauseStream = computed(() => loading.value && streamState.value === 'running')
 const canResumeStream = computed(() => loading.value && streamState.value === 'paused')
@@ -261,6 +373,9 @@ const replayRuns = computed(() => {
 const replaySourceResult = computed<ExperimentResult | null>(
   () => replayRuns.value.find((result) => result.run_id === replaySourceRunId.value) ?? replayRuns.value[0] ?? null,
 )
+const replayResultGrid = computed(() => resultGrid(replaySourceResult.value))
+const replayGridColumnCount = computed(() => Math.max(replayResultGrid.value[0]?.length ?? 0, 0))
+const wideReplayGrid = computed(() => replayGridColumnCount.value >= 10)
 const replayTraceOptions = computed(() =>
   [...(replaySourceResult.value?.path_traces ?? [])].sort((left, right) => right.episode - left.episode),
 )
@@ -353,11 +468,11 @@ const benchmarkEvaluation = computed<BenchmarkEvaluation | null>(() => {
       helpText: '教师基准应在相同算法类型下进行比较。',
     },
     {
-      label: '环境规模一致性',
-      passed: result.request.env_config.size === benchmark.request.env_config.size,
-      expected: `${benchmark.request.env_config.size} x ${benchmark.request.env_config.size}`,
-      actual: `${result.request.env_config.size} x ${result.request.env_config.size}`,
-      helpText: '环境规模变化会改变任务难度，削弱直接比较的意义。',
+      label: '环境配置一致性',
+      passed: sameEnvironmentConfig(result.request.env_config, benchmark.request.env_config),
+      expected: environmentSignatureLabel(benchmark.request.env_config),
+      actual: environmentSignatureLabel(result.request.env_config),
+      helpText: '环境类型、关键单元分布和奖励设置不同，都会改变任务难度，削弱直接比较的意义。',
     },
     {
       label: '训练轮次要求',
@@ -387,10 +502,12 @@ const benchmarkEvaluation = computed<BenchmarkEvaluation | null>(() => {
 })
 
 watch(
-  () => envConfig.size,
+  () => gridEnvConfig.size,
   (size) => {
-    envConfig.goal.row = size - 1
-    envConfig.goal.col = size - 1
+    gridEnvConfig.start.row = clampCellCoordinate(gridEnvConfig.start.row, size - 1)
+    gridEnvConfig.start.col = clampCellCoordinate(gridEnvConfig.start.col, size - 1)
+    gridEnvConfig.goal.row = clampCellCoordinate(gridEnvConfig.goal.row, size - 1)
+    gridEnvConfig.goal.col = clampCellCoordinate(gridEnvConfig.goal.col, size - 1)
     if (size !== 6) {
       obstacleText.value = ''
       trapText.value = ''
@@ -398,8 +515,48 @@ watch(
   },
 )
 
-watch(selectedAlgorithm, (algorithmId) => {
-  experimentName.value = defaultExperimentName(algorithmId)
+watch(
+  [selectedAlgorithm, selectedEnvironment],
+  ([algorithmId, environmentId]) => {
+    experimentName.value = nextExperimentName(algorithmId, environmentId)
+  },
+)
+
+watch(
+  [() => cliffEnvConfig.rows, () => cliffEnvConfig.cols],
+  ([rows, cols]) => {
+    cliffEnvConfig.start.row = clampCellCoordinate(cliffEnvConfig.start.row, rows - 1)
+    cliffEnvConfig.start.col = clampCellCoordinate(cliffEnvConfig.start.col, cols - 1)
+    cliffEnvConfig.goal.row = clampCellCoordinate(cliffEnvConfig.goal.row, rows - 1)
+    cliffEnvConfig.goal.col = clampCellCoordinate(cliffEnvConfig.goal.col, cols - 1)
+    cliffText.value = serializeCellList(defaultCliffCells(rows, cols))
+  },
+)
+
+watch(
+  () => windyEnvConfig.rows,
+  (rows) => {
+    windyEnvConfig.start.row = clampCellCoordinate(windyEnvConfig.start.row, rows - 1)
+    windyEnvConfig.goal.row = clampCellCoordinate(windyEnvConfig.goal.row, rows - 1)
+  },
+)
+
+watch(
+  () => windyEnvConfig.cols,
+  (cols) => {
+    windyEnvConfig.start.col = clampCellCoordinate(windyEnvConfig.start.col, cols - 1)
+    windyEnvConfig.goal.col = clampCellCoordinate(windyEnvConfig.goal.col, cols - 1)
+    windStrengthText.value = serializeWindStrengths(defaultWindStrengths(cols))
+  },
+)
+
+watch(selectedEnvironment, () => {
+  if (!assignmentOptions.value.some((assignment) => assignment.id === selectedAssignmentId.value)) {
+    selectedAssignmentId.value = ''
+  }
+  if (!benchmarkOptions.value.some((benchmark) => benchmark.id === selectedBenchmarkId.value)) {
+    selectedBenchmarkId.value = ''
+  }
 })
 
 watch(viewerRole, (role, previousRole) => {
@@ -487,6 +644,10 @@ watch(
 async function loadCatalog() {
   try {
     catalog.value = await getCatalog()
+    const availableEnvironmentIds = catalog.value.environments.map((environment) => environment.id as EnvironmentId)
+    if (availableEnvironmentIds.length && !availableEnvironmentIds.includes(selectedEnvironment.value)) {
+      selectedEnvironment.value = availableEnvironmentIds[0]
+    }
   } catch (error) {
     console.error(error)
   }
@@ -562,6 +723,90 @@ function roleLabel(role: SubmissionRole) {
   return role === 'teacher' ? '教师视角' : '学生视角'
 }
 
+function isGridWorldConfig(config: EnvironmentConfig): config is GridWorldConfig {
+  return config.environment_id === 'gridworld'
+}
+
+function isCliffWalkingConfig(config: EnvironmentConfig): config is CliffWalkingConfig {
+  return config.environment_id === 'cliffwalking'
+}
+
+function isWindyGridWorldConfig(config: EnvironmentConfig): config is WindyGridWorldConfig {
+  return config.environment_id === 'windygridworld'
+}
+
+function environmentShapeLabel(config: EnvironmentConfig) {
+  return `${config.rows} x ${config.cols}`
+}
+
+function sortCellList(cells: GridPosition[]) {
+  return [...cells].sort((left, right) => (left.row - right.row) || (left.col - right.col))
+}
+
+function normalizeEnvironmentConfig(config: EnvironmentConfig) {
+  if (isGridWorldConfig(config)) {
+    return {
+      environment_id: config.environment_id,
+      rows: config.rows,
+      cols: config.cols,
+      start: config.start,
+      goal: config.goal,
+      obstacles: sortCellList(config.obstacles),
+      traps: sortCellList(config.traps),
+      rewards: config.rewards,
+    }
+  }
+  if (isCliffWalkingConfig(config)) {
+    return {
+      environment_id: config.environment_id,
+      rows: config.rows,
+      cols: config.cols,
+      start: config.start,
+      goal: config.goal,
+      cliffs: sortCellList(config.cliffs),
+      rewards: config.rewards,
+    }
+  }
+  return {
+    environment_id: config.environment_id,
+    rows: config.rows,
+    cols: config.cols,
+    start: config.start,
+    goal: config.goal,
+    wind_strengths: [...config.wind_strengths],
+    rewards: config.rewards,
+  }
+}
+
+function sameEnvironmentConfig(left: EnvironmentConfig, right: EnvironmentConfig) {
+  return JSON.stringify(normalizeEnvironmentConfig(left)) === JSON.stringify(normalizeEnvironmentConfig(right))
+}
+
+function environmentSignatureLabel(config: EnvironmentConfig) {
+  const prefix = `${environmentLabel(config.environment_id)} | ${environmentShapeLabel(config)}`
+  if (isGridWorldConfig(config)) {
+    return `${prefix} | 障碍 ${config.obstacles.length} | 陷阱 ${config.traps.length}`
+  }
+  if (isCliffWalkingConfig(config)) {
+    return `${prefix} | 悬崖 ${config.cliffs.length}`
+  }
+  return `${prefix} | 风列 [${config.wind_strengths.join(', ')}]`
+}
+
+function clampCellCoordinate(value: number, max: number) {
+  return Math.min(Math.max(value, 0), Math.max(max, 0))
+}
+
+function resultGrid(result: ExperimentResult | null) {
+  if (!result) {
+    return []
+  }
+  if (result.environment_view?.view_type === 'grid') {
+    return result.environment_view.cells
+  }
+  return result.policy_grid
+}
+
 function parseCellList(input: string): GridPosition[] {
   if (!input.trim()) {
     return []
@@ -582,8 +827,32 @@ function parseCellList(input: string): GridPosition[] {
     })
 }
 
+function parseWindStrengths(input: string, expectedCols: number) {
+  const strengths = input
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      const parsed = Number(value)
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error(`风力强度格式错误：${value}。请使用 0,0,1,2 这样的非负整数序列。`)
+      }
+      return parsed
+    })
+
+  if (strengths.length !== expectedCols) {
+    throw new Error(`风力强度数量应与列数一致。当前列数为 ${expectedCols}，但输入了 ${strengths.length} 个值。`)
+  }
+
+  return strengths
+}
+
 function serializeCellList(cells: GridPosition[]) {
   return cells.map((cell) => `${cell.row}:${cell.col}`).join(',')
+}
+
+function serializeWindStrengths(strengths: number[]) {
+  return strengths.join(',')
 }
 
 function comparisonLabel(result: ExperimentResult, isCurrent = false) {
@@ -655,15 +924,13 @@ async function ensureComparisonRun(runId: string) {
 function loadDemoPreset() {
   selectedAssignmentId.value = ''
   selectedBenchmarkId.value = ''
-  experimentName.value = defaultExperimentName(selectedAlgorithm.value)
-  envConfig.size = 6
-  envConfig.start = { row: 0, col: 0 }
-  envConfig.goal = { row: 5, col: 5 }
-  envConfig.rewards = {
-    step_penalty: -1,
-    goal_reward: 20,
-    wall_penalty: -3,
-    trap_penalty: -10,
+  experimentName.value = nextExperimentName(selectedAlgorithm.value, selectedEnvironment.value)
+  if (selectedEnvironment.value === 'gridworld') {
+    resetGridEnvironment()
+  } else if (selectedEnvironment.value === 'cliffwalking') {
+    resetCliffEnvironment()
+  } else {
+    resetWindyEnvironment()
   }
   Object.assign(qLearningConfig, {
     learning_rate: 0.2,
@@ -705,19 +972,34 @@ function loadDemoPreset() {
     seed: 7,
     trace_frequency: 30,
   })
-  obstacleText.value = '1:2,2:2,4:2,4:3'
-  trapText.value = '2:4,4:1'
 }
 
 function applyExperimentRequestPreset(request: ExperimentRequest) {
+  selectedEnvironment.value = request.environment_id
   selectedAlgorithm.value = request.algorithm_id
   experimentName.value = request.name
-  envConfig.size = request.env_config.size
-  envConfig.start = { ...request.env_config.start }
-  envConfig.goal = { ...request.env_config.goal }
-  envConfig.rewards = { ...request.env_config.rewards }
-  obstacleText.value = serializeCellList(request.env_config.obstacles)
-  trapText.value = serializeCellList(request.env_config.traps)
+  if (isGridWorldConfig(request.env_config)) {
+    gridEnvConfig.size = request.env_config.size
+    gridEnvConfig.start = { ...request.env_config.start }
+    gridEnvConfig.goal = { ...request.env_config.goal }
+    gridEnvConfig.rewards = { ...request.env_config.rewards }
+    obstacleText.value = serializeCellList(request.env_config.obstacles)
+    trapText.value = serializeCellList(request.env_config.traps)
+  } else if (isCliffWalkingConfig(request.env_config)) {
+    cliffEnvConfig.rows = request.env_config.rows
+    cliffEnvConfig.cols = request.env_config.cols
+    cliffEnvConfig.start = { ...request.env_config.start }
+    cliffEnvConfig.goal = { ...request.env_config.goal }
+    cliffEnvConfig.rewards = { ...request.env_config.rewards }
+    cliffText.value = serializeCellList(request.env_config.cliffs)
+  } else if (isWindyGridWorldConfig(request.env_config)) {
+    windyEnvConfig.rows = request.env_config.rows
+    windyEnvConfig.cols = request.env_config.cols
+    windyEnvConfig.start = { ...request.env_config.start }
+    windyEnvConfig.goal = { ...request.env_config.goal }
+    windyEnvConfig.rewards = { ...request.env_config.rewards }
+    windStrengthText.value = serializeWindStrengths(request.env_config.wind_strengths)
+  }
 
   training.episodes = request.training.episodes
   training.seed = request.training.seed
@@ -839,39 +1121,80 @@ function formatReplayRunLabel(result: ExperimentResult) {
   return `${scope} | ${result.request.submitted_by} | ${algorithmLabel(result.request.algorithm_id)}`
 }
 
+function formatGridPosition(cell: GridPosition) {
+  return `(${cell.row}, ${cell.col})`
+}
+
 function formatReplayPath() {
   if (!replayActiveTrace.value || !replayPathLength.value) {
     return '当前没有可供回放的采样路径。'
   }
 
   return replayActiveTrace.value.path
-    .map((cell, index) => `${index === replayStepIndex.value ? '[' : ''}(${cell.row},${cell.col})${index === replayStepIndex.value ? ']' : ''}`)
+    .map(
+      (cell, index) =>
+        `${index === replayStepIndex.value ? '[' : ''}(${cell.row}, ${cell.col})${index === replayStepIndex.value ? ']' : ''}`,
+    )
     .join(' -> ')
+}
+
+function buildEnvironmentConfig(): EnvironmentConfig {
+  if (selectedEnvironment.value === 'cliffwalking') {
+    const config: CliffWalkingConfig = {
+      environment_id: 'cliffwalking',
+      rows: cliffEnvConfig.rows,
+      cols: cliffEnvConfig.cols,
+      start: { ...cliffEnvConfig.start },
+      goal: { ...cliffEnvConfig.goal },
+      cliffs: parseCellList(cliffText.value),
+      rewards: { ...cliffEnvConfig.rewards },
+    }
+    return config
+  }
+
+  if (selectedEnvironment.value === 'windygridworld') {
+    const config: WindyGridWorldConfig = {
+      environment_id: 'windygridworld',
+      rows: windyEnvConfig.rows,
+      cols: windyEnvConfig.cols,
+      start: { ...windyEnvConfig.start },
+      goal: { ...windyEnvConfig.goal },
+      wind_strengths: parseWindStrengths(windStrengthText.value, windyEnvConfig.cols),
+      rewards: { ...windyEnvConfig.rewards },
+    }
+    return config
+  }
+
+  const config: GridWorldConfig = {
+    environment_id: 'gridworld',
+    rows: gridEnvConfig.size,
+    cols: gridEnvConfig.size,
+    size: gridEnvConfig.size,
+    start: { ...gridEnvConfig.start },
+    goal: { ...gridEnvConfig.goal },
+    obstacles: parseCellList(obstacleText.value),
+    traps: parseCellList(trapText.value),
+    rewards: { ...gridEnvConfig.rewards },
+  }
+  return config
 }
 
 function buildPayload(): ExperimentRequest {
   const sharedPayload = {
     name: experimentName.value,
-    environment_id: 'gridworld' as const,
+    submitted_by: submittedBy.value.trim() || '匿名学生',
+    submission_role: viewerRole.value,
+    assignment_id: selectedAssignment.value?.id ?? null,
+    assignment_title: selectedAssignment.value?.title ?? null,
+    environment_id: selectedEnvironment.value,
     persist_result: persistResult.value,
-    env_config: {
-      ...envConfig,
-      start: { ...envConfig.start },
-      goal: { ...envConfig.goal },
-      rewards: { ...envConfig.rewards },
-      obstacles: parseCellList(obstacleText.value),
-      traps: parseCellList(trapText.value),
-    },
+    env_config: buildEnvironmentConfig(),
     training: { ...training },
   }
 
   if (selectedAlgorithm.value === 'q_learning') {
     const request: QLearningExperimentRequest = {
       ...sharedPayload,
-      submitted_by: submittedBy.value.trim() || '匿名学生',
-      submission_role: viewerRole.value,
-      assignment_id: selectedAssignment.value?.id ?? null,
-      assignment_title: selectedAssignment.value?.title ?? null,
       algorithm_id: 'q_learning',
       algorithm_config: { ...qLearningConfig },
     }
@@ -881,10 +1204,6 @@ function buildPayload(): ExperimentRequest {
   if (selectedAlgorithm.value === 'sarsa') {
     const request: SARSAExperimentRequest = {
       ...sharedPayload,
-      submitted_by: submittedBy.value.trim() || '匿名学生',
-      submission_role: viewerRole.value,
-      assignment_id: selectedAssignment.value?.id ?? null,
-      assignment_title: selectedAssignment.value?.title ?? null,
       algorithm_id: 'sarsa',
       algorithm_config: { ...sarsaConfig },
     }
@@ -894,10 +1213,6 @@ function buildPayload(): ExperimentRequest {
   if (selectedAlgorithm.value === 'dqn') {
     const request: DQNExperimentRequest = {
       ...sharedPayload,
-      submitted_by: submittedBy.value.trim() || '匿名学生',
-      submission_role: viewerRole.value,
-      assignment_id: selectedAssignment.value?.id ?? null,
-      assignment_title: selectedAssignment.value?.title ?? null,
       algorithm_id: 'dqn',
       algorithm_config: { ...dqnConfig },
     }
@@ -906,10 +1221,6 @@ function buildPayload(): ExperimentRequest {
 
   const request: ReinforceExperimentRequest = {
     ...sharedPayload,
-    submitted_by: submittedBy.value.trim() || '匿名学生',
-    submission_role: viewerRole.value,
-    assignment_id: selectedAssignment.value?.id ?? null,
-    assignment_title: selectedAssignment.value?.title ?? null,
     algorithm_id: 'reinforce',
     algorithm_config: { ...reinforceConfig },
   }
@@ -982,7 +1293,7 @@ function formatPath() {
     return '当前没有采样路径数据。'
   }
 
-  return latestTrace.value.path.map((cell) => `(${cell.row},${cell.col})`).join(' -> ')
+  return latestTrace.value.path.map((cell) => `(${cell.row}, ${cell.col})`).join(' -> ')
 }
 
 function pauseTraining() {
@@ -1108,46 +1419,164 @@ function cancelTraining() {
 
           <label class="field">
             <span>网格规模</span>
-            <input v-model.number="envConfig.size" type="number" min="4" max="12" />
+            <input v-model.number="gridEnvConfig.size" type="number" min="4" max="12" :disabled="selectedEnvironment !== 'gridworld'" />
+          </label>
+
+          <label class="field">
+            <span>环境类型</span>
+            <select v-model="selectedEnvironment" class="field__select">
+              <option v-for="environment in environmentOptions" :key="environment.id" :value="environment.id">
+                {{ environment.name }}
+              </option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>起点单元</span>
+            <div class="field__inline">
+              <input v-model.number="gridEnvConfig.start.row" type="number" min="0" :max="gridEnvConfig.size - 1" :disabled="selectedEnvironment !== 'gridworld'" />
+              <input v-model.number="gridEnvConfig.start.col" type="number" min="0" :max="gridEnvConfig.size - 1" :disabled="selectedEnvironment !== 'gridworld'" />
+            </div>
           </label>
 
           <label class="field">
             <span>目标单元</span>
             <div class="field__inline">
-              <input v-model.number="envConfig.goal.row" type="number" min="0" />
-              <input v-model.number="envConfig.goal.col" type="number" min="0" />
+              <input v-model.number="gridEnvConfig.goal.row" type="number" min="0" :max="gridEnvConfig.size - 1" :disabled="selectedEnvironment !== 'gridworld'" />
+              <input v-model.number="gridEnvConfig.goal.col" type="number" min="0" :max="gridEnvConfig.size - 1" :disabled="selectedEnvironment !== 'gridworld'" />
             </div>
           </label>
 
           <label class="field field--full">
             <span>障碍单元</span>
-            <textarea v-model="obstacleText" rows="2" placeholder="1:2,2:2,4:2,4:3"></textarea>
+            <textarea v-model="obstacleText" rows="2" placeholder="1:2,2:2,4:2,4:3" :disabled="selectedEnvironment !== 'gridworld'"></textarea>
           </label>
 
           <label class="field field--full">
             <span>陷阱单元</span>
-            <textarea v-model="trapText" rows="2" placeholder="2:4,4:1"></textarea>
+            <textarea v-model="trapText" rows="2" placeholder="2:4,4:1" :disabled="selectedEnvironment !== 'gridworld'"></textarea>
           </label>
 
           <label class="field">
             <span>步进惩罚</span>
-            <input v-model.number="envConfig.rewards.step_penalty" type="number" step="0.1" />
+            <input v-model.number="gridEnvConfig.rewards.step_penalty" type="number" step="0.1" :disabled="selectedEnvironment !== 'gridworld'" />
           </label>
 
           <label class="field">
             <span>目标奖励</span>
-            <input v-model.number="envConfig.rewards.goal_reward" type="number" step="1" />
+            <input v-model.number="gridEnvConfig.rewards.goal_reward" type="number" step="1" :disabled="selectedEnvironment !== 'gridworld'" />
           </label>
 
           <label class="field">
             <span>碰壁惩罚</span>
-            <input v-model.number="envConfig.rewards.wall_penalty" type="number" step="0.1" />
+            <input v-model.number="gridEnvConfig.rewards.wall_penalty" type="number" step="0.1" :disabled="selectedEnvironment !== 'gridworld'" />
           </label>
 
           <label class="field">
             <span>陷阱惩罚</span>
-            <input v-model.number="envConfig.rewards.trap_penalty" type="number" step="0.1" />
+            <input v-model.number="gridEnvConfig.rewards.trap_penalty" type="number" step="0.1" :disabled="selectedEnvironment !== 'gridworld'" />
           </label>
+
+          <template v-if="selectedEnvironment === 'cliffwalking'">
+            <label class="field">
+              <span>悬崖环境行数</span>
+              <input v-model.number="cliffEnvConfig.rows" type="number" min="4" max="12" />
+            </label>
+
+            <label class="field">
+              <span>悬崖环境列数</span>
+              <input v-model.number="cliffEnvConfig.cols" type="number" min="4" max="20" />
+            </label>
+
+            <label class="field">
+              <span>悬崖环境起点</span>
+              <div class="field__inline">
+                <input v-model.number="cliffEnvConfig.start.row" type="number" min="0" :max="cliffEnvConfig.rows - 1" />
+                <input v-model.number="cliffEnvConfig.start.col" type="number" min="0" :max="cliffEnvConfig.cols - 1" />
+              </div>
+            </label>
+
+            <label class="field">
+              <span>悬崖环境终点</span>
+              <div class="field__inline">
+                <input v-model.number="cliffEnvConfig.goal.row" type="number" min="0" :max="cliffEnvConfig.rows - 1" />
+                <input v-model.number="cliffEnvConfig.goal.col" type="number" min="0" :max="cliffEnvConfig.cols - 1" />
+              </div>
+            </label>
+
+            <label class="field field--full">
+              <span>悬崖单元</span>
+              <textarea v-model="cliffText" rows="2" placeholder="3:1,3:2,3:3,3:4,3:5,3:6,3:7,3:8,3:9,3:10"></textarea>
+            </label>
+
+            <label class="field">
+              <span>悬崖步进惩罚</span>
+              <input v-model.number="cliffEnvConfig.rewards.step_penalty" type="number" step="0.1" />
+            </label>
+
+            <label class="field">
+              <span>悬崖目标奖励</span>
+              <input v-model.number="cliffEnvConfig.rewards.goal_reward" type="number" step="1" />
+            </label>
+
+            <label class="field">
+              <span>悬崖碰壁惩罚</span>
+              <input v-model.number="cliffEnvConfig.rewards.wall_penalty" type="number" step="0.1" />
+            </label>
+
+            <label class="field">
+              <span>悬崖坠落惩罚</span>
+              <input v-model.number="cliffEnvConfig.rewards.cliff_penalty" type="number" step="1" />
+            </label>
+          </template>
+
+          <template v-else-if="selectedEnvironment === 'windygridworld'">
+            <label class="field">
+              <span>风力环境行数</span>
+              <input v-model.number="windyEnvConfig.rows" type="number" min="4" max="12" />
+            </label>
+
+            <label class="field">
+              <span>风力环境列数</span>
+              <input v-model.number="windyEnvConfig.cols" type="number" min="5" max="20" />
+            </label>
+
+            <label class="field">
+              <span>风力环境起点</span>
+              <div class="field__inline">
+                <input v-model.number="windyEnvConfig.start.row" type="number" min="0" :max="windyEnvConfig.rows - 1" />
+                <input v-model.number="windyEnvConfig.start.col" type="number" min="0" :max="windyEnvConfig.cols - 1" />
+              </div>
+            </label>
+
+            <label class="field">
+              <span>风力环境终点</span>
+              <div class="field__inline">
+                <input v-model.number="windyEnvConfig.goal.row" type="number" min="0" :max="windyEnvConfig.rows - 1" />
+                <input v-model.number="windyEnvConfig.goal.col" type="number" min="0" :max="windyEnvConfig.cols - 1" />
+              </div>
+            </label>
+
+            <label class="field field--full">
+              <span>列风强度</span>
+              <textarea v-model="windStrengthText" rows="2" placeholder="0,0,0,1,1,1,2,2,1,0"></textarea>
+            </label>
+
+            <label class="field">
+              <span>风力步进惩罚</span>
+              <input v-model.number="windyEnvConfig.rewards.step_penalty" type="number" step="0.1" />
+            </label>
+
+            <label class="field">
+              <span>风力目标奖励</span>
+              <input v-model.number="windyEnvConfig.rewards.goal_reward" type="number" step="1" />
+            </label>
+
+            <label class="field">
+              <span>风力碰壁惩罚</span>
+              <input v-model.number="windyEnvConfig.rewards.wall_penalty" type="number" step="0.1" />
+            </label>
+          </template>
 
           <div class="section-title">训练算法</div>
 
@@ -1421,7 +1850,7 @@ function cancelTraining() {
             <MetricChart title="训练误差" :series="tdErrorSeries" accent="#0f766e" />
           </div>
 
-          <div class="analysis-grid">
+          <div class="analysis-grid" :class="{ 'analysis-grid--stack': widePolicyGrid }">
             <section class="analysis-card">
               <div class="analysis-card__header">
                 <div>
@@ -1429,7 +1858,12 @@ function cancelTraining() {
                   <h3>学习得到的贪心策略</h3>
                 </div>
               </div>
-              <PolicyGrid v-if="finalPolicyGrid.length" :grid="finalPolicyGrid" />
+              <PolicyGrid
+                v-if="finalPolicyGrid.length"
+                :grid="finalPolicyGrid"
+                :compact="widePolicyGrid"
+                :environment-config="currentResult?.request.env_config ?? null"
+              />
               <div v-else class="analysis-note">策略网格会在流式训练完成后生成。</div>
             </section>
 
@@ -1446,7 +1880,18 @@ function cancelTraining() {
                   {{ latestTrace.success ? '到达目标' : '未到达目标' }} |
                   奖励 {{ latestTrace.total_reward }}
                 </p>
-                <code>{{ formatPath() }}</code>
+                <div v-if="latestTrace?.path.length" class="trace-step-grid" :title="formatPath()">
+                  <article
+                    v-for="(cell, index) in latestTrace.path"
+                    :key="`latest-${latestTrace.episode}-${index}`"
+                    class="trace-step-card"
+                    :class="{ 'trace-step-card--terminal': index === latestTrace.path.length - 1 }"
+                  >
+                    <span class="trace-step-card__index">#{{ index + 1 }}</span>
+                    <strong>{{ formatGridPosition(cell) }}</strong>
+                  </article>
+                </div>
+                <p v-else class="trace-card__empty">当前没有采样路径数据。</p>
               </div>
             </section>
           </div>
@@ -1467,7 +1912,7 @@ function cancelTraining() {
           <p class="panel__eyebrow">系统模块</p>
           <h3>当前后端能力范围</h3>
           <ul>
-            <li>可配置 GridWorld 实验环境</li>
+            <li>可配置 GridWorld、CliffWalking 与 WindyGridWorld 实验环境</li>
             <li>Q-Learning 与 SARSA 训练服务</li>
             <li>DQN 与 REINFORCE 训练服务</li>
             <li>HTTP 与 WebSocket 实验接口</li>
@@ -1663,7 +2108,7 @@ function cancelTraining() {
             </span>
           </div>
 
-          <div class="analysis-grid">
+          <div class="analysis-grid" :class="{ 'analysis-grid--stack': wideReplayGrid }">
             <section class="analysis-card">
               <div class="analysis-card__header">
                 <div>
@@ -1672,9 +2117,11 @@ function cancelTraining() {
                 </div>
               </div>
               <TraceReplayGrid
-                :grid="replaySourceResult?.policy_grid ?? []"
+                :grid="replayResultGrid"
                 :trace="replayActiveTrace.path"
                 :current-step="replayStepIndex"
+                :compact="wideReplayGrid"
+                :environment-config="replaySourceResult?.request.env_config ?? null"
               />
             </section>
 
@@ -1690,7 +2137,21 @@ function cancelTraining() {
                   总奖励 {{ replayActiveTrace.total_reward }} |
                   {{ replayActiveTrace.success ? '终点成功' : '终点失败' }}
                 </p>
-                <code>{{ formatReplayPath() }}</code>
+                <div v-if="replayActiveTrace.path.length" class="trace-step-grid" :title="formatReplayPath()">
+                  <article
+                    v-for="(cell, index) in replayActiveTrace.path"
+                    :key="`replay-${replayActiveTrace.episode}-${index}`"
+                    class="trace-step-card"
+                    :class="{
+                      'trace-step-card--current': index === replayStepIndex,
+                      'trace-step-card--terminal': index === replayActiveTrace.path.length - 1,
+                    }"
+                  >
+                    <span class="trace-step-card__index">#{{ index + 1 }}</span>
+                    <strong>{{ formatGridPosition(cell) }}</strong>
+                  </article>
+                </div>
+                <p v-else class="trace-card__empty">当前没有可供回放的采样路径。</p>
               </div>
             </section>
           </div>

@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-from app.rl.envs.base import ACTION_DELTAS, ACTION_CODES, TransitionResult
-from app.schemas.experiment import GridPosition, GridWorldConfig
+from app.rl.envs.base import ACTION_DELTAS, TransitionResult
+from app.schemas.experiment import CliffWalkingConfig, GridPosition
 
 
-class GridWorldEnv:
-    def __init__(self, config: GridWorldConfig) -> None:
+class CliffWalkingEnv:
+    def __init__(self, config: CliffWalkingConfig) -> None:
         self.config = config
         self.environment_id = config.environment_id
         self.rows = config.rows
         self.cols = config.cols
-        self.size = config.size
         self.state_count = config.rows * config.cols
         self.current_state = config.start.model_copy(deep=True)
-        self.obstacle_cells = {(cell.row, cell.col) for cell in config.obstacles}
-        self.trap_cells = {(cell.row, cell.col) for cell in config.traps}
+        self.cliff_cells = {(cell.row, cell.col) for cell in config.cliffs}
         self.goal_cell = (config.goal.row, config.goal.col)
         self.start_cell = (config.start.row, config.start.col)
 
@@ -35,23 +33,22 @@ class GridWorldEnv:
         terminated_by = "step"
 
         out_of_bounds = not (0 <= candidate_row < self.rows and 0 <= candidate_col < self.cols)
-        blocked = (candidate_row, candidate_col) in self.obstacle_cells
-
-        if out_of_bounds or blocked:
+        if out_of_bounds:
             candidate = self.current_state.model_copy(deep=True)
             reward = self.config.rewards.wall_penalty
             terminated_by = "blocked"
         else:
             candidate = GridPosition(row=candidate_row, col=candidate_col)
+            candidate_cell = (candidate.row, candidate.col)
 
-            if (candidate.row, candidate.col) == self.goal_cell:
+            if candidate_cell == self.goal_cell:
                 reward = self.config.rewards.goal_reward
                 done = True
                 terminated_by = "goal"
-            elif (candidate.row, candidate.col) in self.trap_cells:
-                reward = self.config.rewards.trap_penalty
-                done = True
-                terminated_by = "trap"
+            elif candidate_cell in self.cliff_cells:
+                reward = self.config.rewards.cliff_penalty
+                candidate = self.config.start.model_copy(deep=True)
+                terminated_by = "cliff"
 
         self.current_state = candidate
         return TransitionResult(
@@ -67,8 +64,6 @@ class GridWorldEnv:
             return "START"
         if cell == self.goal_cell:
             return "GOAL"
-        if cell in self.obstacle_cells:
-            return "BLOCK"
-        if cell in self.trap_cells:
-            return "TRAP"
+        if cell in self.cliff_cells:
+            return "CLIFF"
         return None

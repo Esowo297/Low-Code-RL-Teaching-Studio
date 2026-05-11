@@ -1,6 +1,7 @@
 from app.schemas.experiment import (
     AssignmentCatalogResponse,
     AssignmentPreset,
+    CliffWalkingConfig,
     DQNConfig,
     DQNExperimentRequest,
     QLearningConfig,
@@ -10,6 +11,7 @@ from app.schemas.experiment import (
     SARSAConfig,
     SARSAExperimentRequest,
     TrainingConfig,
+    WindyGridWorldConfig,
 )
 
 
@@ -143,6 +145,220 @@ def build_assignment_catalog() -> AssignmentCatalogResponse:
                         learning_rate=0.01,
                         gamma=0.95,
                         max_steps_per_episode=80,
+                        hidden_dim=64,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_cliffwalking_q_learning_risk_path",
+                title="作业5｜CliffWalking 中的 Q-Learning 风险路径分析",
+                summary="观察 Q-Learning 在悬崖环境中如何逐步逼近最短路径，并分析探索阶段掉落悬崖带来的奖励波动。",
+                instructions=(
+                    "在 CliffWalking 环境中运行 Q-Learning，重点观察奖励曲线、成功率和轨迹回放，"
+                    "分析其为何会倾向于学习贴近悬崖的激进路径。"
+                ),
+                learning_goals=[
+                    "理解离策略更新在风险环境中的行为特点。",
+                    "观察探索动作对悬崖任务在线表现的影响。",
+                    "结合轨迹回放分析最短路径与安全性之间的权衡。",
+                ],
+                benchmark_id="teacher_cliffwalking_q_learning_baseline",
+                request=QLearningExperimentRequest(
+                    name="作业5｜CliffWalking Q-Learning 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_cliffwalking_q_learning_risk_path",
+                    assignment_title="作业5｜CliffWalking 中的 Q-Learning 风险路径分析",
+                    environment_id="cliffwalking",
+                    persist_result=True,
+                    env_config=CliffWalkingConfig(),
+                    training=TrainingConfig(episodes=160, seed=7, trace_frequency=20),
+                    algorithm_config=QLearningConfig(
+                        learning_rate=0.2,
+                        gamma=0.92,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.98,
+                        max_steps_per_episode=100,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_cliffwalking_sarsa_safe_policy",
+                title="作业6｜CliffWalking 中的 SARSA 安全策略对比",
+                summary="使用 SARSA 在悬崖环境中训练，比较其与 Q-Learning 在路径选择和在线稳定性上的差异。",
+                instructions=(
+                    "在相同 CliffWalking 任务中运行 SARSA，并与 Q-Learning 基准进行对照，"
+                    "重点分析其为何更容易学到远离悬崖的保守路径。"
+                ),
+                learning_goals=[
+                    "理解同策略更新在探索阶段的安全性优势。",
+                    "比较 SARSA 与 Q-Learning 在成功率和平均奖励上的差异。",
+                    "通过轨迹回放识别保守策略和激进策略的具体表现。",
+                ],
+                benchmark_id="teacher_cliffwalking_sarsa_baseline",
+                request=SARSAExperimentRequest(
+                    name="作业6｜CliffWalking SARSA 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_cliffwalking_sarsa_safe_policy",
+                    assignment_title="作业6｜CliffWalking 中的 SARSA 安全策略对比",
+                    environment_id="cliffwalking",
+                    persist_result=True,
+                    env_config=CliffWalkingConfig(),
+                    training=TrainingConfig(episodes=160, seed=7, trace_frequency=20),
+                    algorithm_config=SARSAConfig(
+                        learning_rate=0.2,
+                        gamma=0.92,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.98,
+                        max_steps_per_episode=100,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_cliffwalking_dqn_value_approximation",
+                title="作业7｜CliffWalking 中的 DQN 逼近策略实验",
+                summary="在经典悬崖环境中使用 DQN 学习动作价值函数，观察经验回放和目标网络对收敛稳定性的影响。",
+                instructions=(
+                    "在默认 CliffWalking 环境中运行 DQN，重点比较其奖励曲线、稳定窗口成功率和轨迹回放，"
+                    "分析函数逼近方法在高惩罚风险环境中的优势与代价。"
+                ),
+                learning_goals=[
+                    "理解 DQN 在离散网格环境中的价值函数逼近流程。",
+                    "观察经验回放和目标网络对训练稳定性的影响。",
+                    "比较 DQN 与表格型算法在悬崖环境中的在线表现差异。",
+                ],
+                benchmark_id="teacher_cliffwalking_dqn_baseline",
+                request=DQNExperimentRequest(
+                    name="作业7｜CliffWalking DQN 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_cliffwalking_dqn_value_approximation",
+                    assignment_title="作业7｜CliffWalking 中的 DQN 逼近策略实验",
+                    environment_id="cliffwalking",
+                    persist_result=True,
+                    env_config=CliffWalkingConfig(),
+                    training=TrainingConfig(episodes=240, seed=7, trace_frequency=20),
+                    algorithm_config=DQNConfig(
+                        learning_rate=0.001,
+                        gamma=0.95,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.992,
+                        max_steps_per_episode=100,
+                        batch_size=32,
+                        replay_buffer_size=2000,
+                        target_sync_interval=40,
+                        warmup_steps=80,
+                        hidden_dim=64,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_windygridworld_q_learning_wind_compensation",
+                title="作业8｜WindyGridWorld 中的 Q-Learning 抗风路径分析",
+                summary="观察 Q-Learning 如何在列风扰动环境中逐步学会补偿向上风力，并分析其路径修正过程。",
+                instructions=(
+                    "在默认 WindyGridWorld 环境中运行 Q-Learning，重点观察奖励曲线、成功率和策略网格，"
+                    "分析智能体如何通过动作选择抵消不同列的风力影响。"
+                ),
+                learning_goals=[
+                    "理解环境动力学变化如何影响状态转移与最优路径。",
+                    "观察离策略更新在风力扰动环境中的收敛特点。",
+                    "结合策略网格与轨迹回放分析抗风路径的形成过程。",
+                ],
+                benchmark_id="teacher_windygridworld_q_learning_baseline",
+                request=QLearningExperimentRequest(
+                    name="作业8｜WindyGridWorld Q-Learning 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_windygridworld_q_learning_wind_compensation",
+                    assignment_title="作业8｜WindyGridWorld 中的 Q-Learning 抗风路径分析",
+                    environment_id="windygridworld",
+                    persist_result=True,
+                    env_config=WindyGridWorldConfig(),
+                    training=TrainingConfig(episodes=160, seed=7, trace_frequency=20),
+                    algorithm_config=QLearningConfig(
+                        learning_rate=0.2,
+                        gamma=0.92,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.98,
+                        max_steps_per_episode=100,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_windygridworld_sarsa_online_correction",
+                title="作业9｜WindyGridWorld 中的 SARSA 在线修正策略实验",
+                summary="使用 SARSA 在风力环境中进行在线学习，并比较其与 Q-Learning 在路径修正过程中的差异。",
+                instructions=(
+                    "在相同 WindyGridWorld 任务中运行 SARSA，并与 Q-Learning 基准进行对照，"
+                    "重点分析其成功率变化、策略稳定性和抗风路径选择。"
+                ),
+                learning_goals=[
+                    "理解同策略更新在动态转移环境中的学习特征。",
+                    "比较 SARSA 与 Q-Learning 在风力环境中的路径修正差异。",
+                    "通过轨迹回放识别在线学习对策略稳定性的影响。",
+                ],
+                benchmark_id="teacher_windygridworld_sarsa_baseline",
+                request=SARSAExperimentRequest(
+                    name="作业9｜WindyGridWorld SARSA 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_windygridworld_sarsa_online_correction",
+                    assignment_title="作业9｜WindyGridWorld 中的 SARSA 在线修正策略实验",
+                    environment_id="windygridworld",
+                    persist_result=True,
+                    env_config=WindyGridWorldConfig(),
+                    training=TrainingConfig(episodes=160, seed=7, trace_frequency=20),
+                    algorithm_config=SARSAConfig(
+                        learning_rate=0.2,
+                        gamma=0.92,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.98,
+                        max_steps_per_episode=100,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_windygridworld_dqn_value_learning",
+                title="作业10｜WindyGridWorld 中的 DQN 风力价值学习实验",
+                summary="在列风扰动环境中使用 DQN 学习动作价值函数，观察函数逼近方法如何学习抗风路径。",
+                instructions=(
+                    "在默认 WindyGridWorld 环境中运行 DQN，比较其奖励曲线、稳定窗口成功率与策略网格，"
+                    "分析经验回放和目标网络在风力环境中的作用。"
+                ),
+                learning_goals=[
+                    "理解 DQN 在动态网格环境中的价值函数学习过程。",
+                    "观察函数逼近方法对风力扰动环境的适应能力。",
+                    "比较 DQN 与表格型算法在风力环境中的训练表现差异。",
+                ],
+                benchmark_id="teacher_windygridworld_dqn_baseline",
+                request=DQNExperimentRequest(
+                    name="作业10｜WindyGridWorld DQN 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_windygridworld_dqn_value_learning",
+                    assignment_title="作业10｜WindyGridWorld 中的 DQN 风力价值学习实验",
+                    environment_id="windygridworld",
+                    persist_result=True,
+                    env_config=WindyGridWorldConfig(),
+                    training=TrainingConfig(episodes=240, seed=7, trace_frequency=20),
+                    algorithm_config=DQNConfig(
+                        learning_rate=0.001,
+                        gamma=0.95,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.992,
+                        max_steps_per_episode=100,
+                        batch_size=32,
+                        replay_buffer_size=2000,
+                        target_sync_interval=40,
+                        warmup_steps=80,
                         hidden_dim=64,
                     ),
                 ),

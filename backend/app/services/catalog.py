@@ -40,7 +40,90 @@ def build_catalog() -> CatalogResponse:
                         help_text="定义智能体到达目标时获得的正向奖励。",
                     ),
                 ],
-            )
+            ),
+            ModuleDefinition(
+                id="cliffwalking",
+                name="CliffWalking",
+                description="用于对比激进路径与安全路径差异的经典悬崖行走网格环境。",
+                parameters=[
+                    ParameterDefinition(
+                        key="rows",
+                        label="网格行数",
+                        default=4,
+                        min_value=4,
+                        max_value=12,
+                        step=1,
+                        help_text="用于控制 CliffWalking 环境的网格行数。",
+                    ),
+                    ParameterDefinition(
+                        key="cols",
+                        label="网格列数",
+                        default=12,
+                        min_value=4,
+                        max_value=20,
+                        step=1,
+                        help_text="用于控制 CliffWalking 环境的网格列数。",
+                    ),
+                    ParameterDefinition(
+                        key="cliff_penalty",
+                        label="悬崖惩罚",
+                        default=-100,
+                        min_value=-200,
+                        max_value=-1,
+                        step=1,
+                        help_text="智能体跌入悬崖并重置到起点时施加的惩罚值。",
+                    ),
+                    ParameterDefinition(
+                        key="goal_reward",
+                        label="目标奖励",
+                        default=0,
+                        min_value=-10,
+                        max_value=50,
+                        step=1,
+                        help_text="智能体到达终点单元时获得的奖励值。",
+                    ),
+                ],
+            ),
+            ModuleDefinition(
+                id="windygridworld",
+                name="WindyGridWorld",
+                description="用于展示列风扰动如何改变最优路径与学习过程的经典风力网格环境。",
+                parameters=[
+                    ParameterDefinition(
+                        key="rows",
+                        label="网格行数",
+                        default=7,
+                        min_value=4,
+                        max_value=12,
+                        step=1,
+                        help_text="用于控制 WindyGridWorld 环境的网格行数。",
+                    ),
+                    ParameterDefinition(
+                        key="cols",
+                        label="网格列数",
+                        default=10,
+                        min_value=5,
+                        max_value=20,
+                        step=1,
+                        help_text="用于控制 WindyGridWorld 环境的网格列数。",
+                    ),
+                    ParameterDefinition(
+                        key="wind_strengths",
+                        label="列风强度",
+                        default="0,0,0,1,1,1,2,2,1,0",
+                        help_text="按列输入风力强度，表示每一列会向上吹动的步数。",
+                    ),
+                    ParameterDefinition(
+                        key="goal_reward",
+                        label="目标奖励",
+                        default=0,
+                        min_value=-10,
+                        max_value=50,
+                        step=1,
+                        help_text="智能体到达终点单元时获得的奖励值。",
+                    ),
+                ],
+            ),
         ],
         algorithms=[
             ModuleDefinition(
@@ -114,7 +197,7 @@ def build_catalog() -> CatalogResponse:
             ModuleDefinition(
                 id="dqn",
                 name="DQN",
-                description="利用经验回放和目标网络的深度值函数方法。",
+                description="利用经验回放和目标网络的深度价值函数方法。",
                 parameters=[
                     ParameterDefinition(
                         key="learning_rate",
@@ -123,7 +206,7 @@ def build_catalog() -> CatalogResponse:
                         min_value=0.0001,
                         max_value=0.01,
                         step=0.0001,
-                        help_text="控制值函数网络优化器的参数更新幅度。",
+                        help_text="控制价值函数网络优化器的参数更新幅度。",
                     ),
                     ParameterDefinition(
                         key="batch_size",

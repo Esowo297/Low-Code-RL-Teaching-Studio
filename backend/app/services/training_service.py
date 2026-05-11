@@ -9,7 +9,7 @@ from app.rl.algorithms.dqn import DQNTrainer
 from app.rl.algorithms.q_learning import QLearningTrainer
 from app.rl.algorithms.reinforce import ReinforceTrainer
 from app.rl.algorithms.sarsa import SARSATrainer
-from app.rl.envs.gridworld import GridWorldEnv
+from app.rl.envs.factory import create_environment
 from app.rl.training_artifacts import AsyncProgressCallback, StreamController
 from app.schemas.experiment import ExperimentHistoryEntry, ExperimentRequestType, ExperimentResult, ExperimentSummary
 
@@ -55,7 +55,7 @@ class TrainingService:
         self,
         request: ExperimentRequestType,
     ) -> QLearningTrainer | DQNTrainer | ReinforceTrainer | SARSATrainer:
-        env = GridWorldEnv(request.env_config)
+        env = create_environment(request)
         if request.algorithm_id == "q_learning":
             return QLearningTrainer(env, request.algorithm_config, request.training)
         if request.algorithm_id == "dqn":

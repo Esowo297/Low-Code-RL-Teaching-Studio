@@ -4,7 +4,7 @@ import asyncio
 
 import numpy as np
 
-from app.rl.envs.gridworld import ACTION_CODES, GridWorldEnv
+from app.rl.envs.base import ACTION_CODES, DiscreteGridEnvironment
 from app.rl.training_artifacts import AsyncProgressCallback, ProgressUpdate, StreamController, TrainingArtifacts
 from app.schemas.experiment import EpisodeMetric, PathTrace, QLearningConfig, TrainingConfig
 
@@ -12,7 +12,7 @@ from app.schemas.experiment import EpisodeMetric, PathTrace, QLearningConfig, Tr
 class QLearningTrainer:
     def __init__(
         self,
-        env: GridWorldEnv,
+        env: DiscreteGridEnvironment,
         algorithm_config: QLearningConfig,
         training_config: TrainingConfig,
     ) -> None:
@@ -36,7 +36,7 @@ class QLearningTrainer:
         on_progress: AsyncProgressCallback | None = None,
         controller: StreamController | None = None,
     ) -> TrainingArtifacts:
-        q_table = np.zeros((self.env.size * self.env.size, len(ACTION_CODES)), dtype=float)
+        q_table = np.zeros((self.env.state_count, len(ACTION_CODES)), dtype=float)
         metrics: list[EpisodeMetric] = []
         path_traces: list[PathTrace] = []
         epsilon = self.algorithm_config.epsilon_start
@@ -139,15 +139,15 @@ class QLearningTrainer:
 
     def _build_policy_grid(self, q_table: np.ndarray) -> list[list[str]]:
         grid: list[list[str]] = []
-        for row in range(self.env.size):
+        for row in range(self.env.rows):
             current_row: list[str] = []
-            for col in range(self.env.size):
+            for col in range(self.env.cols):
                 special_token = self.env.cell_token(row, col)
                 if special_token is not None:
                     current_row.append(special_token)
                     continue
 
-                state_index = row * self.env.size + col
+                state_index = row * self.env.cols + col
                 action_index = int(np.argmax(q_table[state_index]))
                 current_row.append(ACTION_CODES[action_index])
             grid.append(current_row)

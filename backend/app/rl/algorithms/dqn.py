@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from app.rl.envs.gridworld import ACTION_CODES, GridWorldEnv
+from app.rl.envs.base import ACTION_CODES, DiscreteGridEnvironment
 from app.rl.training_artifacts import AsyncProgressCallback, ProgressUpdate, StreamController, TrainingArtifacts
 from app.schemas.experiment import DQNConfig, EpisodeMetric, PathTrace, TrainingConfig
 
@@ -40,7 +40,7 @@ class DQNNetwork(nn.Module):
 class DQNTrainer:
     def __init__(
         self,
-        env: GridWorldEnv,
+        env: DiscreteGridEnvironment,
         algorithm_config: DQNConfig,
         training_config: TrainingConfig,
     ) -> None:
@@ -51,7 +51,7 @@ class DQNTrainer:
         self.device = torch.device("cpu")
         torch.manual_seed(training_config.seed)
 
-        self.state_dim = self.env.size * self.env.size
+        self.state_dim = self.env.state_count
         self.action_dim = len(ACTION_CODES)
         self.policy_net = DQNNetwork(self.state_dim, algorithm_config.hidden_dim, self.action_dim).to(self.device)
         self.target_net = DQNNetwork(self.state_dim, algorithm_config.hidden_dim, self.action_dim).to(self.device)
@@ -221,15 +221,15 @@ class DQNTrainer:
 
     def _build_policy_grid(self) -> list[list[str]]:
         grid: list[list[str]] = []
-        for row in range(self.env.size):
+        for row in range(self.env.rows):
             current_row: list[str] = []
-            for col in range(self.env.size):
+            for col in range(self.env.cols):
                 special_token = self.env.cell_token(row, col)
                 if special_token is not None:
                     current_row.append(special_token)
                     continue
 
-                state_index = row * self.env.size + col
+                state_index = row * self.env.cols + col
                 with torch.no_grad():
                     q_values = self.policy_net(self._state_batch([state_index]))
                     action_index = int(torch.argmax(q_values, dim=1).item())

@@ -1,4 +1,5 @@
 export type AlgorithmId = 'q_learning' | 'sarsa' | 'dqn' | 'reinforce'
+export type EnvironmentId = 'gridworld' | 'cliffwalking' | 'windygridworld'
 export type SubmissionRole = 'teacher' | 'student'
 
 export interface GridPosition {
@@ -13,7 +14,23 @@ export interface RewardConfig {
   trap_penalty: number
 }
 
+export interface CliffRewardConfig {
+  step_penalty: number
+  goal_reward: number
+  wall_penalty: number
+  cliff_penalty: number
+}
+
+export interface WindyRewardConfig {
+  step_penalty: number
+  goal_reward: number
+  wall_penalty: number
+}
+
 export interface GridWorldConfig {
+  environment_id: 'gridworld'
+  rows: number
+  cols: number
   size: number
   start: GridPosition
   goal: GridPosition
@@ -21,6 +38,28 @@ export interface GridWorldConfig {
   traps: GridPosition[]
   rewards: RewardConfig
 }
+
+export interface CliffWalkingConfig {
+  environment_id: 'cliffwalking'
+  rows: number
+  cols: number
+  start: GridPosition
+  goal: GridPosition
+  cliffs: GridPosition[]
+  rewards: CliffRewardConfig
+}
+
+export interface WindyGridWorldConfig {
+  environment_id: 'windygridworld'
+  rows: number
+  cols: number
+  start: GridPosition
+  goal: GridPosition
+  wind_strengths: number[]
+  rewards: WindyRewardConfig
+}
+
+export type EnvironmentConfig = GridWorldConfig | CliffWalkingConfig | WindyGridWorldConfig
 
 export interface QLearningConfig {
   learning_rate: number
@@ -73,9 +112,9 @@ export interface ExperimentRequestBase {
   submission_role: SubmissionRole
   assignment_id?: string | null
   assignment_title?: string | null
-  environment_id: string
+  environment_id: EnvironmentId
   persist_result: boolean
-  env_config: GridWorldConfig
+  env_config: EnvironmentConfig
   training: TrainingConfig
 }
 
@@ -128,6 +167,13 @@ export interface ExperimentSummary {
   stable_success_rate: number
 }
 
+export interface GridEnvironmentView {
+  view_type: 'grid'
+  rows: number
+  cols: number
+  cells: string[][]
+}
+
 export interface ExperimentResult {
   run_id: string
   created_at: string
@@ -136,6 +182,7 @@ export interface ExperimentResult {
   summary: ExperimentSummary
   metrics: EpisodeMetric[]
   path_traces: PathTrace[]
+  environment_view?: GridEnvironmentView | null
   policy_grid: string[][]
 }
 
@@ -147,7 +194,7 @@ export interface HistoryEntry {
   assignment_id?: string | null
   assignment_title?: string | null
   created_at: string
-  environment_id: string
+  environment_id: EnvironmentId
   algorithm_id: AlgorithmId
   average_reward: number
   success_rate: number

@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from torch.distributions import Categorical
 
-from app.rl.envs.gridworld import ACTION_CODES, GridWorldEnv
+from app.rl.envs.base import ACTION_CODES, DiscreteGridEnvironment
 from app.rl.training_artifacts import AsyncProgressCallback, ProgressUpdate, StreamController, TrainingArtifacts
 from app.schemas.experiment import EpisodeMetric, PathTrace, ReinforceConfig, TrainingConfig
 
@@ -30,7 +30,7 @@ class ReinforcePolicyNetwork(nn.Module):
 class ReinforceTrainer:
     def __init__(
         self,
-        env: GridWorldEnv,
+        env: DiscreteGridEnvironment,
         algorithm_config: ReinforceConfig,
         training_config: TrainingConfig,
     ) -> None:
@@ -39,7 +39,7 @@ class ReinforceTrainer:
         self.training_config = training_config
         self.device = torch.device("cpu")
         self.action_dim = len(ACTION_CODES)
-        self.state_dim = env.size * env.size
+        self.state_dim = env.state_count
         self.rng = np.random.default_rng(training_config.seed)
 
         torch.manual_seed(training_config.seed)
@@ -191,15 +191,15 @@ class ReinforceTrainer:
 
     def _build_policy_grid(self) -> list[list[str]]:
         grid: list[list[str]] = []
-        for row in range(self.env.size):
+        for row in range(self.env.rows):
             current_row: list[str] = []
-            for col in range(self.env.size):
+            for col in range(self.env.cols):
                 special_token = self.env.cell_token(row, col)
                 if special_token is not None:
                     current_row.append(special_token)
                     continue
 
-                state_index = row * self.env.size + col
+                state_index = row * self.env.cols + col
                 with torch.no_grad():
                     logits = self.policy_net(self._state_batch([state_index]))
                     action_index = int(torch.argmax(logits, dim=1).item())

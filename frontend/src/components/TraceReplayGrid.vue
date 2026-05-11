@@ -1,23 +1,28 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { GridPosition } from '../types'
+import type { EnvironmentConfig, GridPosition } from '../types'
 
 const props = defineProps<{
   grid: string[][]
   trace: GridPosition[]
   currentStep: number
+  environmentConfig?: EnvironmentConfig | null
+  compact?: boolean
 }>()
 
+const columnCount = computed(() => Math.max(props.grid[0]?.length ?? 0, 1))
+
 const labelMap: Record<string, string> = {
-  U: '上',
-  R: '右',
-  D: '下',
-  L: '左',
-  START: '起',
-  GOAL: '终',
-  BLOCK: '障',
-  TRAP: '陷',
+  U: '↑',
+  R: '→',
+  D: '↓',
+  L: '←',
+  START: 'S',
+  GOAL: 'G',
+  BLOCK: 'B',
+  TRAP: 'T',
+  CLIFF: 'CLF',
 }
 
 const toneMap: Record<string, string> = {
@@ -29,6 +34,7 @@ const toneMap: Record<string, string> = {
   GOAL: 'policy-grid__cell--goal',
   BLOCK: 'policy-grid__cell--block',
   TRAP: 'policy-grid__cell--trap',
+  CLIFF: 'policy-grid__cell--cliff',
 }
 
 const currentStepSafe = computed(() => {
@@ -70,6 +76,13 @@ const currentKey = computed(() => {
   return `${cell.row}-${cell.col}`
 })
 
+function windStrengthAt(colIndex: number) {
+  if (props.environmentConfig?.environment_id !== 'windygridworld') {
+    return 0
+  }
+  return props.environmentConfig.wind_strengths[colIndex] ?? 0
+}
+
 const cells = computed(() =>
   props.grid.flatMap((row, rowIndex) =>
     row.map((token, colIndex) => {
@@ -78,13 +91,16 @@ const cells = computed(() =>
       const isVisited = visitedKeys.value.has(id)
       const isCurrent = currentKey.value === id
       const traceStep = pathStepMap.value.get(id)
+      const windStrength = windStrengthAt(colIndex)
 
       return {
         id,
         label: traceStep && isVisited ? `${traceStep}` : labelMap[token] ?? token,
+        windLabel: windStrength > 0 ? `W${windStrength}` : '',
         classes: [
           'policy-grid__cell',
           baseTone,
+          windStrength > 0 ? 'policy-grid__cell--windy' : '',
           isVisited ? 'policy-grid__cell--visited' : '',
           isCurrent ? 'policy-grid__cell--current' : '',
         ],
@@ -95,9 +111,16 @@ const cells = computed(() =>
 </script>
 
 <template>
-  <div class="policy-grid" :style="{ '--grid-size': `${Math.max(grid.length, 1)}` }">
-    <div v-for="cell in cells" :key="cell.id" :class="cell.classes">
-      {{ cell.label }}
+  <div class="policy-grid-scroll">
+    <div
+      class="policy-grid"
+      :class="{ 'policy-grid--compact': props.compact }"
+      :style="{ '--grid-cols': `${columnCount}` }"
+    >
+      <div v-for="cell in cells" :key="cell.id" :class="cell.classes">
+        <span class="policy-grid__main">{{ cell.label }}</span>
+        <span v-if="cell.windLabel" class="policy-grid__wind">{{ cell.windLabel }}</span>
+      </div>
     </div>
   </div>
 </template>

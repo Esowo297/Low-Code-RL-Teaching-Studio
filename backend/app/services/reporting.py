@@ -4,7 +4,12 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from app.schemas.experiment import BenchmarkPreset, BenchmarkThreshold, ExperimentReportRequest, ExperimentResult
-from app.services.benchmarks import get_benchmark_preset, get_summary_metric, passes_benchmark_preset
+from app.services.benchmarks import (
+    get_benchmark_preset,
+    get_summary_metric,
+    matches_environment_config,
+    passes_benchmark_preset,
+)
 
 
 def render_experiment_report(request: ExperimentReportRequest) -> str:
@@ -67,23 +72,43 @@ def _render_configuration(result: ExperimentResult) -> Iterable[str]:
 
     yield f"- 实验环境：{_format_environment_id(request.environment_id)}"
     yield f"- 训练算法：{_format_algorithm_id(request.algorithm_id)}"
-    yield f"- 网格规模：{env_config.size} × {env_config.size}"
+    yield f"- 网格规模：{_format_environment_shape(env_config.rows, env_config.cols)}"
     yield f"- 起点位置：({env_config.start.row}, {env_config.start.col})"
     yield f"- 目标位置：({env_config.goal.row}, {env_config.goal.col})"
-    yield f"- 障碍单元：{_format_cell_list(env_config.obstacles)}"
-    yield f"- 陷阱单元：{_format_cell_list(env_config.traps)}"
-    yield (
-        "- 奖励设置："
-        f"步进 {env_config.rewards.step_penalty}，"
-        f"目标 {env_config.rewards.goal_reward}，"
-        f"碰壁 {env_config.rewards.wall_penalty}，"
-        f"陷阱 {env_config.rewards.trap_penalty}"
-    )
+
+    if request.environment_id == "cliffwalking":
+        yield f"- 悬崖单元：{_format_cell_list(env_config.cliffs)}"
+        yield (
+            "- 奖励设置："
+            f"步进 {env_config.rewards.step_penalty}，"
+            f"目标 {env_config.rewards.goal_reward}，"
+            f"碰壁 {env_config.rewards.wall_penalty}，"
+            f"悬崖 {env_config.rewards.cliff_penalty}"
+        )
+    elif request.environment_id == "windygridworld":
+        yield f"- 列风强度：{_format_wind_strengths(env_config.wind_strengths)}"
+        yield (
+            "- 奖励设置："
+            f"步进 {env_config.rewards.step_penalty}，"
+            f"目标 {env_config.rewards.goal_reward}，"
+            f"碰壁 {env_config.rewards.wall_penalty}"
+        )
+    else:
+        yield f"- 障碍单元：{_format_cell_list(env_config.obstacles)}"
+        yield f"- 陷阱单元：{_format_cell_list(env_config.traps)}"
+        yield (
+            "- 奖励设置："
+            f"步进 {env_config.rewards.step_penalty}，"
+            f"目标 {env_config.rewards.goal_reward}，"
+            f"碰壁 {env_config.rewards.wall_penalty}，"
+            f"陷阱 {env_config.rewards.trap_penalty}"
+        )
+
     yield f"- 训练轮次：{training.episodes}"
     yield f"- 轨迹采样频率：{training.trace_frequency}"
     yield f"- 随机种子：{training.seed}"
     yield "- 算法参数："
-    for key, value in algorithm_config.model_dump(mode='json').items():
+    for key, value in algorithm_config.model_dump(mode="json").items():
         yield f"  - {key}: {value}"
 
 
@@ -126,11 +151,11 @@ def _render_benchmark_evaluation(result: ExperimentResult, benchmark: BenchmarkP
             "教师基准比较应在相同算法条件下进行。",
         ),
         (
-            "环境规模一致性",
-            result.request.env_config.size == benchmark.request.env_config.size,
-            str(benchmark.request.env_config.size),
-            str(result.request.env_config.size),
-            "环境规模变化会导致任务难度变化，削弱结果可比性。",
+            "环境配置一致性",
+            matches_environment_config(result.request.env_config, benchmark.request.env_config),
+            _format_environment_signature(benchmark.request.env_config),
+            _format_environment_signature(result.request.env_config),
+            "环境类型、网格规模、关键单元分布和奖励设置不同，都会改变任务难度并削弱对比意义。",
         ),
         (
             "训练轮次要求",
@@ -141,7 +166,7 @@ def _render_benchmark_evaluation(result: ExperimentResult, benchmark: BenchmarkP
         ),
     ]
 
-    rendered = []
+    rendered: list[str] = []
     for label, passed, expected, actual, note in checks:
         rendered.append(f"- {'通过' if passed else '未通过'}｜{label}：期望 {expected}，实际 {actual}")
         rendered.append(f"  - 说明：{note}")
@@ -160,22 +185,39 @@ def _render_benchmark_evaluation(result: ExperimentResult, benchmark: BenchmarkP
 
 
 def _render_interpretation(result: ExperimentResult, benchmark: BenchmarkPreset | None) -> list[str]:
-    notes = []
+    notes: list[str] = []
+
     if result.summary.stable_success_rate >= 0.7:
-        notes.append("- 训练后期成功率保持在较高水平，说明当前策略已进入相对稳定阶段。")
+        notes.append("- 训练后期成功率保持在较高水平，说明当前策略已经进入相对稳定阶段。")
     else:
-        notes.append("- 训练后期成功率仍存在波动，说明当前策略稳定性仍需进一步提升。")
+        notes.append("- 训练后期成功率仍存在较明显波动，说明当前策略稳定性还有提升空间。")
 
     if result.summary.average_reward >= 0:
-        notes.append("- 平均奖励已达到非负水平，说明成功轨迹收益能够较好抵消探索成本。")
+        notes.append("- 平均奖励已达到非负水平，说明成功轨迹收益能够较好覆盖探索成本。")
     else:
-        notes.append("- 平均奖励仍为负值，说明探索成本和失败回合对整体结果仍有较大影响。")
+        notes.append("- 平均奖励仍为负值，说明探索成本或失败回合对整体表现仍有较大影响。")
 
     if benchmark is not None:
         if _passes_benchmark(result, benchmark):
-            notes.append("- 当前实验结果已达到所选教师基准要求，可作为较稳定的课堂参考结果。")
+            notes.append("- 当前实验结果已经达到所选教师基准要求，可作为较稳定的课堂参考结果。")
         else:
-            notes.append("- 当前实验结果尚未完全达到所选教师基准要求，更适合作为阶段性实验结果进行分析。")
+            notes.append("- 当前实验结果尚未完全达到所选教师基准要求，更适合作为阶段性结果进行分析。")
+
+    if result.request.environment_id == "cliffwalking":
+        if result.request.algorithm_id == "q_learning":
+            notes.append("- 在 CliffWalking 中，Q-Learning 更容易逼近贴近悬崖的激进路径，但在线探索阶段通常代价更高。")
+        elif result.request.algorithm_id == "sarsa":
+            notes.append("- 在 CliffWalking 中，SARSA 往往更倾向学习远离悬崖的保守路径，因此在线表现通常更平稳。")
+        elif result.request.algorithm_id == "dqn":
+            notes.append("- DQN 在 CliffWalking 中能够学到可用价值函数，但其训练稳定性更依赖样本量和超参数。")
+
+    if result.request.environment_id == "windygridworld":
+        if result.request.algorithm_id == "q_learning":
+            notes.append("- 在 WindyGridWorld 中，Q-Learning 的关键是学会针对不同列的风力提前补偿动作偏移。")
+        elif result.request.algorithm_id == "sarsa":
+            notes.append("- 在 WindyGridWorld 中，SARSA 的在线更新更容易反映探索动作对抗风路径的即时影响。")
+        elif result.request.algorithm_id == "dqn":
+            notes.append("- DQN 在 WindyGridWorld 中能够较快学到稳定的抗风策略，适合用于展示函数逼近在离散网格中的效果。")
 
     return notes
 
@@ -185,7 +227,7 @@ def _passes_benchmark(result: ExperimentResult, benchmark: BenchmarkPreset) -> b
 
 
 def _format_metric(threshold: BenchmarkThreshold, value: float) -> str:
-    if threshold.metric_id in {'success_rate', 'stable_success_rate'}:
+    if threshold.metric_id in {"success_rate", "stable_success_rate"}:
         return f"{value * 100:.1f}%"
     return f"{value:.3f}"
 
@@ -195,6 +237,26 @@ def _format_cell_list(cells, *, arrow: bool = False) -> str:
         return "无"
     separator = " -> " if arrow else "，"
     return separator.join(f"({cell.row}, {cell.col})" for cell in cells)
+
+
+def _format_wind_strengths(wind_strengths: list[int]) -> str:
+    return "[" + ", ".join(str(strength) for strength in wind_strengths) + "]"
+
+
+def _format_environment_signature(env_config) -> str:
+    prefix = (
+        f"{_format_environment_id(env_config.environment_id)} | "
+        f"{_format_environment_shape(env_config.rows, env_config.cols)} | "
+        f"S({env_config.start.row}, {env_config.start.col}) -> G({env_config.goal.row}, {env_config.goal.col})"
+    )
+
+    if env_config.environment_id == "gridworld":
+        return prefix + f" | 障碍 {len(env_config.obstacles)} | 陷阱 {len(env_config.traps)}"
+    if env_config.environment_id == "cliffwalking":
+        return prefix + f" | 悬崖 {len(env_config.cliffs)}"
+    if env_config.environment_id == "windygridworld":
+        return prefix + f" | 风列 {_format_wind_strengths(env_config.wind_strengths)}"
+    return prefix
 
 
 def _format_role(role: str) -> str:
@@ -222,4 +284,12 @@ def _format_algorithm_id(algorithm_id: str) -> str:
 def _format_environment_id(environment_id: str) -> str:
     if environment_id == "gridworld":
         return "GridWorld"
+    if environment_id == "cliffwalking":
+        return "CliffWalking"
+    if environment_id == "windygridworld":
+        return "WindyGridWorld"
     return environment_id
+
+
+def _format_environment_shape(rows: int, cols: int) -> str:
+    return f"{rows} x {cols}"
