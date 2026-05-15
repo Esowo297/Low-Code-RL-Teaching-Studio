@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.schemas.experiment import ExperimentHistoryEntry, ExperimentResult
+from app.schemas.experiment import BenchmarkPreset, ExperimentHistoryEntry, ExperimentResult
 
 
 class ExperimentStore:
@@ -117,6 +117,74 @@ class ExperimentStore:
         payload = json.loads(row["payload"])
         return ExperimentResult.model_validate(payload)
 
+    def save_benchmark(self, benchmark: BenchmarkPreset) -> Path:
+        payload = benchmark.model_dump(mode="json")
+        request = payload["request"]
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO benchmarks (
+                    benchmark_id,
+                    created_at,
+                    updated_at,
+                    name,
+                    submitted_by,
+                    environment_id,
+                    algorithm_id,
+                    payload
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["id"],
+                    payload.get("created_at"),
+                    payload.get("updated_at"),
+                    payload["name"],
+                    request["submitted_by"],
+                    request["environment_id"],
+                    request["algorithm_id"],
+                    json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            connection.commit()
+
+        return self.db_path
+
+    def list_benchmarks(self) -> list[BenchmarkPreset]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload
+                FROM benchmarks
+                ORDER BY updated_at DESC, created_at DESC, benchmark_id DESC
+                """
+            ).fetchall()
+
+        return [BenchmarkPreset.model_validate(json.loads(row["payload"])) for row in rows]
+
+    def load_benchmark(self, benchmark_id: str) -> BenchmarkPreset:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload FROM benchmarks WHERE benchmark_id = ?",
+                (benchmark_id,),
+            ).fetchone()
+
+        if row is None:
+            raise FileNotFoundError(f"Benchmark record not found: {benchmark_id}")
+
+        return BenchmarkPreset.model_validate(json.loads(row["payload"]))
+
+    def delete_benchmark(self, benchmark_id: str) -> None:
+        with self._connect() as connection:
+            rowcount = connection.execute(
+                "DELETE FROM benchmarks WHERE benchmark_id = ?",
+                (benchmark_id,),
+            ).rowcount
+            connection.commit()
+
+        if rowcount == 0:
+            raise FileNotFoundError(f"Benchmark record not found: {benchmark_id}")
+
     def _ensure_schema(self) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -139,6 +207,23 @@ class ExperimentStore:
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_experiments_created_at ON experiments (created_at DESC)"
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS benchmarks (
+                    benchmark_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    submitted_by TEXT NOT NULL DEFAULT '课程教师',
+                    environment_id TEXT NOT NULL,
+                    algorithm_id TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_benchmarks_updated_at ON benchmarks (updated_at DESC, created_at DESC)"
             )
             existing_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(experiments)").fetchall()

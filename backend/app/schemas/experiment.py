@@ -25,7 +25,7 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-EnvironmentId: TypeAlias = Literal["gridworld", "cliffwalking", "windygridworld"]
+EnvironmentId: TypeAlias = Literal["gridworld", "cliffwalking", "windygridworld", "frozenlake"]
 
 
 class GridPosition(StrictModel):
@@ -51,6 +51,13 @@ class WindyRewardConfig(StrictModel):
     step_penalty: float = -1.0
     goal_reward: float = 0.0
     wall_penalty: float = -1.0
+
+
+class FrozenLakeRewardConfig(StrictModel):
+    step_penalty: float = 0.0
+    goal_reward: float = 1.0
+    wall_penalty: float = 0.0
+    hole_penalty: float = 0.0
 
 
 class EnvironmentConfigBase(StrictModel):
@@ -250,6 +257,83 @@ class WindyGridWorldConfig(EnvironmentConfigBase):
             raise ValueError(f"{label} cell ({cell.row}, {cell.col}) is outside a {self.rows}x{self.cols} grid")
 
 
+def default_frozen_start() -> GridPosition:
+    return GridPosition(row=0, col=0)
+
+
+def default_frozen_goal(rows: int, cols: int) -> GridPosition:
+    return GridPosition(row=rows - 1, col=cols - 1)
+
+
+def default_holes_for_shape(rows: int, cols: int) -> list[GridPosition]:
+    if rows == 4 and cols == 4:
+        return [
+            GridPosition(row=1, col=1),
+            GridPosition(row=1, col=3),
+            GridPosition(row=2, col=3),
+            GridPosition(row=3, col=0),
+        ]
+    return []
+
+
+class FrozenLakeConfig(EnvironmentConfigBase):
+    environment_id: Literal["frozenlake"] = "frozenlake"
+    rows: int = Field(default=4, ge=4, le=12)
+    cols: int = Field(default=4, ge=4, le=12)
+    start: GridPosition = Field(default_factory=default_frozen_start)
+    goal: GridPosition = Field(default_factory=lambda: default_frozen_goal(4, 4))
+    holes: list[GridPosition] = Field(default_factory=lambda: default_holes_for_shape(4, 4))
+    slip_probability: float = Field(default=0.2, ge=0.0, le=1.0)
+    rewards: FrozenLakeRewardConfig = Field(default_factory=FrozenLakeRewardConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_defaults(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+        payload.setdefault("environment_id", "frozenlake")
+
+        rows = payload.get("rows", 4)
+        cols = payload.get("cols", 4)
+
+        if "start" not in payload:
+            start = default_frozen_start()
+            payload["start"] = {"row": start.row, "col": start.col}
+        if "goal" not in payload:
+            goal = default_frozen_goal(rows, cols)
+            payload["goal"] = {"row": goal.row, "col": goal.col}
+        if "holes" not in payload:
+            payload["holes"] = default_holes_for_shape(rows, cols)
+
+        return payload
+
+    @model_validator(mode="after")
+    def validate_cells(self) -> "FrozenLakeConfig":
+        reserved: dict[tuple[int, int], str] = {}
+
+        for label, cell in [("start", self.start), ("goal", self.goal)]:
+            self._assert_in_bounds(label, cell)
+            key = (cell.row, cell.col)
+            if key in reserved:
+                raise ValueError(f"{label} cell {key} overlaps with {reserved[key]}")
+            reserved[key] = label
+
+        for cell in self.holes:
+            self._assert_in_bounds("hole", cell)
+            key = (cell.row, cell.col)
+            if key in reserved:
+                raise ValueError(f"hole cell {key} overlaps with {reserved[key]}")
+            reserved[key] = "hole"
+
+        return self
+
+    def _assert_in_bounds(self, label: str, cell: GridPosition) -> None:
+        if cell.row >= self.rows or cell.col >= self.cols:
+            raise ValueError(f"{label} cell ({cell.row}, {cell.col}) is outside a {self.rows}x{self.cols} grid")
+
+
 class QLearningConfig(StrictModel):
     learning_rate: float = Field(default=0.2, gt=0.0, le=1.0)
     gamma: float = Field(default=0.92, gt=0.0, le=0.999)
@@ -308,7 +392,7 @@ class TrainingConfig(StrictModel):
 
 SubmissionRole: TypeAlias = Literal["teacher", "student"]
 EnvironmentConfig: TypeAlias = Annotated[
-    GridWorldConfig | CliffWalkingConfig | WindyGridWorldConfig,
+    GridWorldConfig | CliffWalkingConfig | WindyGridWorldConfig | FrozenLakeConfig,
     Field(discriminator="environment_id"),
 ]
 
@@ -508,6 +592,21 @@ class BenchmarkThreshold(StrictModel):
     help_text: str
 
 
+class BenchmarkDraft(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=240)
+    teacher_note: str = Field(min_length=1, max_length=240)
+    request: ExperimentRequestType = Field(discriminator="algorithm_id")
+    thresholds: list[BenchmarkThreshold] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> "BenchmarkDraft":
+        metric_ids = [threshold.metric_id for threshold in self.thresholds]
+        if len(metric_ids) != len(set(metric_ids)):
+            raise ValueError("benchmark thresholds contain duplicate metric ids")
+        return self
+
+
 class BenchmarkPreset(StrictModel):
     id: str
     name: str
@@ -515,6 +614,16 @@ class BenchmarkPreset(StrictModel):
     teacher_note: str
     request: ExperimentRequestType = Field(discriminator="algorithm_id")
     thresholds: list[BenchmarkThreshold]
+    is_builtin: bool = True
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> "BenchmarkPreset":
+        metric_ids = [threshold.metric_id for threshold in self.thresholds]
+        if len(metric_ids) != len(set(metric_ids)):
+            raise ValueError("benchmark thresholds contain duplicate metric ids")
+        return self
 
 
 class BenchmarkCatalogResponse(StrictModel):
@@ -577,6 +686,16 @@ class AssignmentAnalyticsEntry(StrictModel):
     benchmark_pass_rate: float | None = None
 
 
+class EnvironmentAnalyticsEntry(StrictModel):
+    environment_id: str
+    run_count: int
+    student_runs: int
+    distinct_submitters: int
+    average_reward: float
+    average_success_rate: float
+    best_success_rate: float
+
+
 class ClassroomAnalyticsResponse(StrictModel):
     total_runs: int
     student_runs: int
@@ -588,4 +707,5 @@ class ClassroomAnalyticsResponse(StrictModel):
     assignment_filter_id: str | None = None
     algorithms: list[AlgorithmAnalyticsEntry]
     assignments: list[AssignmentAnalyticsEntry]
+    environments: list[EnvironmentAnalyticsEntry]
     students: list[StudentAnalyticsEntry]

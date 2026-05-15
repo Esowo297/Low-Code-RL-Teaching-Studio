@@ -21,6 +21,7 @@ const labelMap: Record<string, string> = {
   BLOCK: 'B',
   TRAP: 'T',
   CLIFF: 'CLF',
+  HOLE: 'H',
 }
 
 const toneMap: Record<string, string> = {
@@ -33,6 +34,7 @@ const toneMap: Record<string, string> = {
   BLOCK: 'policy-grid__cell--block',
   TRAP: 'policy-grid__cell--trap',
   CLIFF: 'policy-grid__cell--cliff',
+  HOLE: 'policy-grid__cell--hole',
 }
 
 function windStrengthAt(colIndex: number) {

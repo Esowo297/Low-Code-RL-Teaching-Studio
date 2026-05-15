@@ -4,6 +4,8 @@ from app.schemas.experiment import (
     CliffWalkingConfig,
     DQNConfig,
     DQNExperimentRequest,
+    FrozenLakeConfig,
+    FrozenLakeRewardConfig,
     QLearningConfig,
     QLearningExperimentRequest,
     ReinforceConfig,
@@ -360,6 +362,137 @@ def build_assignment_catalog() -> AssignmentCatalogResponse:
                         target_sync_interval=40,
                         warmup_steps=80,
                         hidden_dim=64,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_frozenlake_q_learning_sparse_reward",
+                title="作业11｜FrozenLake 中的 Q-Learning 稀疏奖励探索",
+                summary="观察表格型 Q-Learning 在冰湖环境的稀疏奖励和随机滑移条件下如何逐步找到可行路径。",
+                instructions=(
+                    "运行给定的冰湖环境预设，观察奖励曲线、成功率和采样轨迹，"
+                    "分析滑移扰动与终止冰洞如何提高探索难度。"
+                ),
+                learning_goals=[
+                    "理解稀疏奖励如何减慢小型离散环境中的价值传播速度。",
+                    "观察随机滑移如何增加探索成本并扰动早期训练轨迹。",
+                    "结合策略视图与轨迹回放分析失败回合在冰湖中的集中区域。",
+                ],
+                benchmark_id="teacher_frozenlake_q_learning_baseline",
+                request=QLearningExperimentRequest(
+                    name="作业11｜FrozenLake Q-Learning 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_frozenlake_q_learning_sparse_reward",
+                    assignment_title="作业11｜FrozenLake 中的 Q-Learning 稀疏奖励探索",
+                    environment_id="frozenlake",
+                    persist_result=True,
+                    env_config=FrozenLakeConfig(
+                        slip_probability=0.1,
+                        rewards=FrozenLakeRewardConfig(
+                            step_penalty=0.0,
+                            goal_reward=1.0,
+                            wall_penalty=0.0,
+                            hole_penalty=-0.2,
+                        ),
+                    ),
+                    training=TrainingConfig(episodes=800, seed=7, trace_frequency=20),
+                    algorithm_config=QLearningConfig(
+                        learning_rate=0.2,
+                        gamma=0.99,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.996,
+                        max_steps_per_episode=80,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_frozenlake_sarsa_slip_comparison",
+                title="作业12｜FrozenLake 中的 SARSA 滑移策略对比",
+                summary="在同一冰湖环境下比较 SARSA 与 Q-Learning，分析同策略更新是否会形成不同路径偏好。",
+                instructions=(
+                    "运行 SARSA 的冰湖环境预设，并与 Q-Learning 基准进行对照。"
+                    "重点分析成功率稳定性、冰洞附近的路径选择，以及滑移噪声对在线更新的影响。"
+                ),
+                learning_goals=[
+                    "比较随机转移条件下同策略与离策略学习的差异。",
+                    "识别 SARSA 是否会在高风险单元附近学到更保守的绕行路线。",
+                    "结合轨迹而不仅是汇总指标来解释算法差异。",
+                ],
+                benchmark_id="teacher_frozenlake_sarsa_baseline",
+                request=SARSAExperimentRequest(
+                    name="作业12｜FrozenLake SARSA 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_frozenlake_sarsa_slip_comparison",
+                    assignment_title="作业12｜FrozenLake 中的 SARSA 滑移策略对比",
+                    environment_id="frozenlake",
+                    persist_result=True,
+                    env_config=FrozenLakeConfig(
+                        slip_probability=0.1,
+                        rewards=FrozenLakeRewardConfig(
+                            step_penalty=0.0,
+                            goal_reward=1.0,
+                            wall_penalty=0.0,
+                            hole_penalty=-0.2,
+                        ),
+                    ),
+                    training=TrainingConfig(episodes=800, seed=7, trace_frequency=20),
+                    algorithm_config=SARSAConfig(
+                        learning_rate=0.2,
+                        gamma=0.99,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.996,
+                        max_steps_per_episode=80,
+                    ),
+                ),
+            ),
+            AssignmentPreset(
+                id="assignment_frozenlake_dqn_sparse_value_learning",
+                title="作业13｜FrozenLake 中的 DQN 稀疏价值学习",
+                summary="使用 DQN 在稀疏奖励的冰湖环境中学习动作价值，并与表格型方法进行比较。",
+                instructions=(
+                    "运行 DQN 的冰湖环境预设，评估函数逼近是否改善了训练后期的成功表现。"
+                    "结合奖励曲线、样本效率和策略网格，分析其与表格型方法的差异。"
+                ),
+                learning_goals=[
+                    "观察 DQN 在小型但带噪声的稀疏奖励环境中的训练表现。",
+                    "比较基于经验回放的学习方式与表格型探索在同一任务中的差异。",
+                    "在判断学习是否真正稳定时，同时参考基准评估和轨迹回放。",
+                ],
+                benchmark_id="teacher_frozenlake_dqn_baseline",
+                request=DQNExperimentRequest(
+                    name="作业13｜FrozenLake DQN 实验",
+                    submitted_by="学生A",
+                    submission_role="student",
+                    assignment_id="assignment_frozenlake_dqn_sparse_value_learning",
+                    assignment_title="作业13｜FrozenLake 中的 DQN 稀疏价值学习",
+                    environment_id="frozenlake",
+                    persist_result=True,
+                    env_config=FrozenLakeConfig(
+                        slip_probability=0.1,
+                        rewards=FrozenLakeRewardConfig(
+                            step_penalty=0.0,
+                            goal_reward=1.0,
+                            wall_penalty=0.0,
+                            hole_penalty=-0.2,
+                        ),
+                    ),
+                    training=TrainingConfig(episodes=260, seed=7, trace_frequency=20),
+                    algorithm_config=DQNConfig(
+                        learning_rate=0.001,
+                        gamma=0.95,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.992,
+                        max_steps_per_episode=80,
+                        batch_size=16,
+                        replay_buffer_size=500,
+                        target_sync_interval=20,
+                        warmup_steps=32,
+                        hidden_dim=32,
                     ),
                 ),
             ),

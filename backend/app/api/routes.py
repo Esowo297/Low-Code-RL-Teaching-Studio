@@ -10,6 +10,8 @@ from app.rl.training_artifacts import ProgressUpdate, StreamController, Training
 from app.schemas.experiment import (
     AssignmentCatalogResponse,
     BenchmarkCatalogResponse,
+    BenchmarkDraft,
+    BenchmarkPreset,
     CatalogResponse,
     ClassroomAnalyticsResponse,
     ExperimentHistoryEntry,
@@ -19,7 +21,7 @@ from app.schemas.experiment import (
 )
 from app.services.analytics import build_classroom_analytics
 from app.services.assignments import build_assignment_catalog
-from app.services.benchmarks import build_benchmark_catalog
+from app.services.benchmarks import build_benchmark_catalog, create_benchmark, delete_benchmark, update_benchmark
 from app.services.catalog import build_catalog
 from app.services.reporting import render_experiment_report
 from app.services.training_service import TrainingService
@@ -42,7 +44,35 @@ def get_catalog() -> CatalogResponse:
 
 @router.get("/benchmarks", response_model=BenchmarkCatalogResponse)
 def get_benchmarks() -> BenchmarkCatalogResponse:
-    return build_benchmark_catalog()
+    builtin_catalog = build_benchmark_catalog()
+    return BenchmarkCatalogResponse(
+        benchmarks=[*builtin_catalog.benchmarks, *training_service.store.list_benchmarks()]
+    )
+
+
+@router.post("/benchmarks", response_model=BenchmarkPreset)
+def create_benchmark_record(request: BenchmarkDraft) -> BenchmarkPreset:
+    return create_benchmark(training_service.store, request)
+
+
+@router.put("/benchmarks/{benchmark_id}", response_model=BenchmarkPreset)
+def update_benchmark_record(benchmark_id: str, request: BenchmarkDraft) -> BenchmarkPreset:
+    try:
+        return update_benchmark(training_service.store, benchmark_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/benchmarks/{benchmark_id}", status_code=204)
+def delete_benchmark_record(benchmark_id: str) -> None:
+    try:
+        delete_benchmark(training_service.store, benchmark_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/assignments", response_model=AssignmentCatalogResponse)
@@ -91,7 +121,7 @@ def run_experiment(request: ExperimentRequest) -> ExperimentResult:
 @router.post("/reports/render", response_class=PlainTextResponse)
 def render_report(request: ExperimentReportRequest) -> PlainTextResponse:
     try:
-        report = render_experiment_report(request)
+        report = render_experiment_report(request, training_service.store)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

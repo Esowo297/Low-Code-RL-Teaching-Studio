@@ -124,6 +124,46 @@ def build_catalog() -> CatalogResponse:
                     ),
                 ],
             ),
+            ModuleDefinition(
+                id="frozenlake",
+                name="FrozenLake",
+                description="用于展示稀疏奖励、终止冰洞与随机滑移如何共同影响学习过程的经典冰湖网格环境。",
+                parameters=[
+                    ParameterDefinition(
+                        key="rows",
+                        label="网格行数",
+                        default=4,
+                        min_value=4,
+                        max_value=12,
+                        step=1,
+                        help_text="用于控制冰湖环境的网格行数。",
+                    ),
+                    ParameterDefinition(
+                        key="cols",
+                        label="网格列数",
+                        default=4,
+                        min_value=4,
+                        max_value=12,
+                        step=1,
+                        help_text="用于控制冰湖环境的网格列数。",
+                    ),
+                    ParameterDefinition(
+                        key="holes",
+                        label="冰洞单元",
+                        default="1:1,1:3,2:3,3:0",
+                        help_text="按 row:col 格式输入终止冰洞单元，使用逗号分隔。",
+                    ),
+                    ParameterDefinition(
+                        key="slip_probability",
+                        label="滑移概率",
+                        default=0.2,
+                        min_value=0.0,
+                        max_value=1.0,
+                        step=0.05,
+                        help_text="表示智能体执行动作时向左右方向滑移的概率。",
+                    ),
+                ],
+            ),
         ],
         algorithms=[
             ModuleDefinition(

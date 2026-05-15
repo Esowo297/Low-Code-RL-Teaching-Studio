@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import type { ExperimentStreamSession } from './api'
 import {
+  createBenchmark,
+  deleteBenchmark,
   getAssignments,
   getBenchmarks,
   getCatalog,
@@ -11,6 +13,7 @@ import {
   getHistory,
   renderExperimentReport,
   runExperimentStream,
+  updateBenchmark,
 } from './api'
 import ComparisonChart from './components/ComparisonChart.vue'
 import MetricChart from './components/MetricChart.vue'
@@ -20,6 +23,7 @@ import type {
   AlgorithmId,
   AssignmentCatalogResponse,
   AssignmentPreset,
+  BenchmarkDraft,
   ClassroomAnalyticsResponse,
   BenchmarkCatalogResponse,
   BenchmarkPreset,
@@ -37,6 +41,8 @@ import type {
   ExperimentRequest,
   ExperimentResult,
   ExperimentStartedEvent,
+  FrozenLakeConfig,
+  FrozenLakeRewardConfig,
   GridPosition,
   GridWorldConfig,
   HistoryEntry,
@@ -64,6 +70,27 @@ interface BenchmarkEvaluation {
   passed: boolean
   compatibilityChecks: BenchmarkCheckRow[]
   thresholdChecks: BenchmarkCheckRow[]
+}
+
+interface BenchmarkOverview {
+  passed: boolean
+  headline: string
+  message: string
+}
+
+interface BenchmarkOverviewStat {
+  label: string
+  value: string
+  tone: 'pass' | 'fail' | 'neutral'
+}
+
+interface BenchmarkMetricCard {
+  label: string
+  passed: boolean
+  actual: string
+  expected: string
+  deltaText: string
+  helpText: string
 }
 
 const catalog = ref<CatalogResponse | null>(null)
@@ -95,6 +122,8 @@ const selectedBenchmarkId = ref('')
 const viewerRole = ref<SubmissionRole>('student')
 const submittedBy = ref('学生A')
 const reportExporting = ref(false)
+const benchmarkSaving = ref(false)
+const benchmarkDeleting = ref(false)
 const replaySourceRunId = ref('')
 const replayTraceEpisode = ref(0)
 const replayStepIndex = ref(0)
@@ -106,9 +135,19 @@ const obstacleText = ref('1:2,2:2,4:2,4:3')
 const trapText = ref('2:4,4:1')
 const cliffText = ref('3:1,3:2,3:3,3:4,3:5,3:6,3:7,3:8,3:9,3:10')
 const windStrengthText = ref('0,0,0,1,1,1,2,2,1,0')
+const holeText = ref('1:1,1:3,2:3,3:0')
 const experimentName = ref('GridWorld Q-Learning 演示')
 const persistResult = ref(true)
 const comparisonPalette = ['#0f5bd8', '#d97706', '#0f766e', '#b42318']
+const benchmarkEditor = reactive({
+  name: '',
+  description: '',
+  teacher_note: '',
+  average_reward: 0,
+  best_reward: 0,
+  success_rate: 0,
+  stable_success_rate: 0,
+})
 
 const gridEnvConfig = reactive({
   size: 6,
@@ -145,6 +184,20 @@ const windyEnvConfig = reactive({
     goal_reward: 0,
     wall_penalty: -1,
   } satisfies WindyRewardConfig,
+})
+
+const frozenEnvConfig = reactive({
+  rows: 4,
+  cols: 4,
+  start: { row: 0, col: 0 },
+  goal: { row: 3, col: 3 },
+  slip_probability: 0.2,
+  rewards: {
+    step_penalty: 0,
+    goal_reward: 1,
+    wall_penalty: 0,
+    hole_penalty: 0,
+  } satisfies FrozenLakeRewardConfig,
 })
 
 const training = reactive({
@@ -199,6 +252,9 @@ function environmentLabel(environmentId: EnvironmentId) {
   if (environmentId === 'windygridworld') {
     return 'WindyGridWorld'
   }
+  if (environmentId === 'frozenlake') {
+    return 'FrozenLake'
+  }
   return 'GridWorld'
 }
 
@@ -220,6 +276,18 @@ function defaultWindStrengths(cols: number) {
     return base.slice(0, cols)
   }
   return [...base, ...Array.from({ length: cols - base.length }, () => 0)]
+}
+
+function defaultFrozenHoles(rows: number, cols: number): GridPosition[] {
+  if (rows === 4 && cols === 4) {
+    return [
+      { row: 1, col: 1 },
+      { row: 1, col: 3 },
+      { row: 2, col: 3 },
+      { row: 3, col: 0 },
+    ]
+  }
+  return []
 }
 
 function resetGridEnvironment() {
@@ -261,6 +329,21 @@ function resetWindyEnvironment() {
     wall_penalty: -1,
   }
   windStrengthText.value = serializeWindStrengths(defaultWindStrengths(windyEnvConfig.cols))
+}
+
+function resetFrozenEnvironment() {
+  frozenEnvConfig.rows = 4
+  frozenEnvConfig.cols = 4
+  frozenEnvConfig.start = { row: 0, col: 0 }
+  frozenEnvConfig.goal = { row: 3, col: 3 }
+  frozenEnvConfig.slip_probability = 0.2
+  frozenEnvConfig.rewards = {
+    step_penalty: 0,
+    goal_reward: 1,
+    wall_penalty: 0,
+    hole_penalty: 0,
+  }
+  holeText.value = serializeCellList(defaultFrozenHoles(frozenEnvConfig.rows, frozenEnvConfig.cols))
 }
 
 function nextExperimentName(algorithmId: AlgorithmId, environmentId: EnvironmentId = selectedEnvironment.value) {
@@ -332,6 +415,12 @@ const effectiveBenchmarkId = computed(() => {
 const selectedBenchmark = computed<BenchmarkPreset | null>(
   () => benchmarkOptions.value.find((benchmark) => benchmark.id === effectiveBenchmarkId.value) ?? null,
 )
+const selectedEditableBenchmark = computed<BenchmarkPreset | null>(() => {
+  if (!selectedBenchmark.value || selectedBenchmark.value.is_builtin !== false) {
+    return null
+  }
+  return selectedBenchmark.value
+})
 const activeRunId = computed(() => currentResult.value?.run_id ?? liveRunId.value)
 const showResults = computed(() => Boolean(currentResult.value || liveMetrics.value.length || loading.value))
 const showTeacherAnalytics = computed(() => viewerRole.value === 'teacher')
@@ -501,6 +590,92 @@ const benchmarkEvaluation = computed<BenchmarkEvaluation | null>(() => {
   }
 })
 
+const benchmarkOverview = computed<BenchmarkOverview | null>(() => {
+  if (!benchmarkEvaluation.value) {
+    return null
+  }
+
+  const compatibilityFailures = benchmarkEvaluation.value.compatibilityChecks.filter((check) => !check.passed)
+  const thresholdFailures = benchmarkEvaluation.value.thresholdChecks.filter((check) => !check.passed)
+  const totalFailures = compatibilityFailures.length + thresholdFailures.length
+
+  if (benchmarkEvaluation.value.passed) {
+    return {
+      passed: true,
+      headline: '当前结果已达到教师基准',
+      message: '所有前置条件与指标阈值均已通过，可直接作为当前环境与算法配置下的参考结果。',
+    }
+  }
+
+  if (compatibilityFailures.length) {
+    return {
+      passed: false,
+      headline: '当前结果暂不适合直接对标',
+      message: `请先解决“${compatibilityFailures[0].label}”。只要比较前提不一致，后续阈值是否通过都不具备直接对照意义。`,
+    }
+  }
+
+  return {
+    passed: false,
+    headline: '当前结果接近基准，但仍需补强',
+    message: `还有 ${totalFailures} 项指标未达标，优先关注“${thresholdFailures[0]?.label ?? '关键指标'}”。`,
+  }
+})
+
+const benchmarkOverviewStats = computed<BenchmarkOverviewStat[]>(() => {
+  if (!benchmarkEvaluation.value) {
+    return []
+  }
+
+  const allChecks = [...benchmarkEvaluation.value.compatibilityChecks, ...benchmarkEvaluation.value.thresholdChecks]
+  const failedChecks = allChecks.filter((check) => !check.passed)
+
+  return [
+    {
+      label: '通过检查',
+      value: `${allChecks.length - failedChecks.length}/${allChecks.length}`,
+      tone: failedChecks.length ? 'neutral' : 'pass',
+    },
+    {
+      label: '待改进项',
+      value: `${failedChecks.length}`,
+      tone: failedChecks.length ? 'fail' : 'pass',
+    },
+    {
+      label: '首要问题',
+      value: failedChecks[0]?.label ?? '全部达标',
+      tone: failedChecks.length ? 'neutral' : 'pass',
+    },
+  ]
+})
+
+const benchmarkMetricCards = computed<BenchmarkMetricCard[]>(() => {
+  if (!currentResult.value || !selectedBenchmark.value) {
+    return []
+  }
+
+  return selectedBenchmark.value.thresholds.map((threshold) => {
+    const actualValue = getSummaryMetric(currentResult.value as ExperimentResult, threshold.metric_id)
+    const delta = actualValue - threshold.min_value
+    const passed = delta >= 0
+    const deltaText =
+      Math.abs(delta) < 1e-9
+        ? '刚好达到目标'
+        : passed
+          ? `超出目标 ${formatBenchmarkGap(threshold.metric_id, delta)}`
+          : `距离目标还差 ${formatBenchmarkGap(threshold.metric_id, delta)}`
+
+    return {
+      label: threshold.label,
+      passed,
+      actual: formatBenchmarkMetric(threshold.metric_id, actualValue),
+      expected: formatBenchmarkMetric(threshold.metric_id, threshold.min_value),
+      deltaText,
+      helpText: threshold.help_text,
+    }
+  })
+})
+
 watch(
   () => gridEnvConfig.size,
   (size) => {
@@ -550,12 +725,37 @@ watch(
   },
 )
 
+watch(
+  [() => frozenEnvConfig.rows, () => frozenEnvConfig.cols],
+  ([rows, cols]) => {
+    frozenEnvConfig.start.row = clampCellCoordinate(frozenEnvConfig.start.row, rows - 1)
+    frozenEnvConfig.start.col = clampCellCoordinate(frozenEnvConfig.start.col, cols - 1)
+    frozenEnvConfig.goal.row = clampCellCoordinate(frozenEnvConfig.goal.row, rows - 1)
+    frozenEnvConfig.goal.col = clampCellCoordinate(frozenEnvConfig.goal.col, cols - 1)
+    holeText.value = serializeCellList(defaultFrozenHoles(rows, cols))
+  },
+)
+
 watch(selectedEnvironment, () => {
   if (!assignmentOptions.value.some((assignment) => assignment.id === selectedAssignmentId.value)) {
     selectedAssignmentId.value = ''
   }
   if (!benchmarkOptions.value.some((benchmark) => benchmark.id === selectedBenchmarkId.value)) {
     selectedBenchmarkId.value = ''
+  }
+})
+
+watch(
+  selectedBenchmark,
+  (benchmark) => {
+    syncBenchmarkEditor(benchmark)
+  },
+  { immediate: true },
+)
+
+watch([selectedEnvironment, selectedAlgorithm, currentResult], () => {
+  if (!selectedBenchmark.value) {
+    syncBenchmarkEditor(null)
   }
 })
 
@@ -735,6 +935,10 @@ function isWindyGridWorldConfig(config: EnvironmentConfig): config is WindyGridW
   return config.environment_id === 'windygridworld'
 }
 
+function isFrozenLakeConfig(config: EnvironmentConfig): config is FrozenLakeConfig {
+  return config.environment_id === 'frozenlake'
+}
+
 function environmentShapeLabel(config: EnvironmentConfig) {
   return `${config.rows} x ${config.cols}`
 }
@@ -767,6 +971,18 @@ function normalizeEnvironmentConfig(config: EnvironmentConfig) {
       rewards: config.rewards,
     }
   }
+  if (isFrozenLakeConfig(config)) {
+    return {
+      environment_id: config.environment_id,
+      rows: config.rows,
+      cols: config.cols,
+      start: config.start,
+      goal: config.goal,
+      holes: sortCellList(config.holes),
+      slip_probability: config.slip_probability,
+      rewards: config.rewards,
+    }
+  }
   return {
     environment_id: config.environment_id,
     rows: config.rows,
@@ -784,6 +1000,9 @@ function sameEnvironmentConfig(left: EnvironmentConfig, right: EnvironmentConfig
 
 function environmentSignatureLabel(config: EnvironmentConfig) {
   const prefix = `${environmentLabel(config.environment_id)} | ${environmentShapeLabel(config)}`
+  if (isFrozenLakeConfig(config)) {
+    return `${prefix} | 冰洞 ${config.holes.length} | 滑移 ${config.slip_probability}`
+  }
   if (isGridWorldConfig(config)) {
     return `${prefix} | 障碍 ${config.obstacles.length} | 陷阱 ${config.traps.length}`
   }
@@ -855,6 +1074,35 @@ function serializeWindStrengths(strengths: number[]) {
   return strengths.join(',')
 }
 
+function defaultBenchmarkName() {
+  return `${environmentLabel(selectedEnvironment.value)} ${algorithmLabel(selectedAlgorithm.value)} 教师基准`
+}
+
+function syncBenchmarkEditor(benchmark: BenchmarkPreset | null) {
+  if (benchmark) {
+    benchmarkEditor.name = benchmark.name
+    benchmarkEditor.description = benchmark.description
+    benchmarkEditor.teacher_note = benchmark.teacher_note
+    benchmarkEditor.average_reward =
+      benchmark.thresholds.find((threshold) => threshold.metric_id === 'average_reward')?.min_value ?? 0
+    benchmarkEditor.best_reward =
+      benchmark.thresholds.find((threshold) => threshold.metric_id === 'best_reward')?.min_value ?? 0
+    benchmarkEditor.success_rate =
+      benchmark.thresholds.find((threshold) => threshold.metric_id === 'success_rate')?.min_value ?? 0
+    benchmarkEditor.stable_success_rate =
+      benchmark.thresholds.find((threshold) => threshold.metric_id === 'stable_success_rate')?.min_value ?? 0
+    return
+  }
+
+  benchmarkEditor.name = defaultBenchmarkName()
+  benchmarkEditor.description = `用于 ${environmentLabel(selectedEnvironment.value)} 环境下 ${algorithmLabel(selectedAlgorithm.value)} 实验的教师自定义基准。`
+  benchmarkEditor.teacher_note = '请结合课堂目标调整阈值，并在同算法、同环境配置下进行对比。'
+  benchmarkEditor.average_reward = currentResult.value?.summary.average_reward ?? 0
+  benchmarkEditor.best_reward = currentResult.value?.summary.best_reward ?? 0
+  benchmarkEditor.success_rate = currentResult.value?.summary.success_rate ?? 0
+  benchmarkEditor.stable_success_rate = currentResult.value?.summary.stable_success_rate ?? 0
+}
+
 function comparisonLabel(result: ExperimentResult, isCurrent = false) {
   const prefix = isCurrent ? '当前实验' : result.request.name
   return `${prefix} (${algorithmLabel(result.request.algorithm_id)})`
@@ -867,8 +1115,42 @@ function formatBenchmarkMetric(metricId: BenchmarkThreshold['metric_id'], value:
   return value.toFixed(3)
 }
 
+function formatBenchmarkGap(metricId: BenchmarkThreshold['metric_id'], value: number) {
+  const magnitude = Math.abs(value)
+  if (metricId === 'success_rate' || metricId === 'stable_success_rate') {
+    return `${(magnitude * 100).toFixed(1)} 个百分点`
+  }
+  return magnitude.toFixed(3)
+}
+
 function formatTimestamp(timestamp: string) {
   return new Date(timestamp).toLocaleString()
+}
+
+function ensureFiniteNumber(value: number, label: string) {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} 不能为空，请输入有效数字。`)
+  }
+  return value
+}
+
+function ensureMinTextLength(value: string, minLength: number, label: string) {
+  const trimmed = value.trim()
+  if (trimmed.length < minLength) {
+    throw new Error(`${label} 至少需要 ${minLength} 个字符。`)
+  }
+  return trimmed
+}
+
+function ensureProbability(value: number, label: string) {
+  let normalized = ensureFiniteNumber(value, label)
+  if (normalized > 1 && normalized <= 100) {
+    normalized /= 100
+  }
+  if (normalized < 0 || normalized > 1) {
+    throw new Error(`${label} 需要在 0 到 1 之间，也可以直接输入 60 代表 60%。`)
+  }
+  return normalized
 }
 
 function getSummaryMetric(result: ExperimentResult, metricId: BenchmarkThreshold['metric_id']) {
@@ -929,6 +1211,8 @@ function loadDemoPreset() {
     resetGridEnvironment()
   } else if (selectedEnvironment.value === 'cliffwalking') {
     resetCliffEnvironment()
+  } else if (selectedEnvironment.value === 'frozenlake') {
+    resetFrozenEnvironment()
   } else {
     resetWindyEnvironment()
   }
@@ -999,6 +1283,14 @@ function applyExperimentRequestPreset(request: ExperimentRequest) {
     windyEnvConfig.goal = { ...request.env_config.goal }
     windyEnvConfig.rewards = { ...request.env_config.rewards }
     windStrengthText.value = serializeWindStrengths(request.env_config.wind_strengths)
+  } else if (isFrozenLakeConfig(request.env_config)) {
+    frozenEnvConfig.rows = request.env_config.rows
+    frozenEnvConfig.cols = request.env_config.cols
+    frozenEnvConfig.start = { ...request.env_config.start }
+    frozenEnvConfig.goal = { ...request.env_config.goal }
+    frozenEnvConfig.slip_probability = request.env_config.slip_probability
+    frozenEnvConfig.rewards = { ...request.env_config.rewards }
+    holeText.value = serializeCellList(request.env_config.holes)
   }
 
   training.episodes = request.training.episodes
@@ -1013,6 +1305,98 @@ function applyExperimentRequestPreset(request: ExperimentRequest) {
     Object.assign(dqnConfig, request.algorithm_config)
   } else {
     Object.assign(reinforceConfig, request.algorithm_config)
+  }
+}
+
+function buildBenchmarkDraft(): BenchmarkDraft {
+  const request = buildPayload()
+  const benchmarkName = ensureMinTextLength(
+    benchmarkEditor.name.trim() || defaultBenchmarkName(),
+    3,
+    '基准名称',
+  )
+  const averageReward = ensureFiniteNumber(benchmarkEditor.average_reward, '平均奖励阈值')
+  const bestReward = ensureFiniteNumber(benchmarkEditor.best_reward, '最佳奖励阈值')
+  const successRate = ensureProbability(benchmarkEditor.success_rate, '成功率阈值')
+  const stableSuccessRate = ensureProbability(benchmarkEditor.stable_success_rate, '稳定窗口阈值')
+
+  return {
+    name: benchmarkName,
+    description: benchmarkEditor.description.trim() || `${environmentLabel(selectedEnvironment.value)} 教师基准。`,
+    teacher_note: benchmarkEditor.teacher_note.trim() || '请在相同环境与算法配置下使用该教师基准。',
+    request: {
+      ...request,
+      name: benchmarkName,
+      submitted_by: '课程教师',
+      submission_role: 'teacher',
+      assignment_id: null,
+      assignment_title: null,
+      persist_result: false,
+    },
+    thresholds: [
+      {
+        metric_id: 'average_reward',
+        label: '平均奖励',
+        min_value: averageReward,
+        help_text: '整体平均奖励应达到教师设定的参考水平。',
+      },
+      {
+        metric_id: 'best_reward',
+        label: '最佳奖励',
+        min_value: bestReward,
+        help_text: '训练过程中至少应出现一次较高质量的成功轨迹。',
+      },
+      {
+        metric_id: 'success_rate',
+        label: '成功率',
+        min_value: successRate,
+        help_text: '成功回合占比应达到课堂要求。',
+      },
+      {
+        metric_id: 'stable_success_rate',
+        label: '稳定窗口',
+        min_value: stableSuccessRate,
+        help_text: '训练后期的成功率应体现相对稳定的策略表现。',
+      },
+    ],
+  }
+}
+
+async function saveBenchmarkEditor() {
+  benchmarkSaving.value = true
+  errorMessage.value = ''
+  const editingBenchmarkId = selectedEditableBenchmark.value?.id ?? null
+  try {
+    const draft = buildBenchmarkDraft()
+    const saved = editingBenchmarkId
+      ? await updateBenchmark(editingBenchmarkId, draft)
+      : await createBenchmark(draft)
+    await loadBenchmarks()
+    selectedBenchmarkId.value = saved.id
+    streamNotice.value = editingBenchmarkId ? '教师基准已更新。' : '教师基准已保存。'
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '保存教师基准失败。'
+  } finally {
+    benchmarkSaving.value = false
+  }
+}
+
+async function removeSelectedBenchmark() {
+  if (!selectedEditableBenchmark.value) {
+    return
+  }
+
+  benchmarkDeleting.value = true
+  errorMessage.value = ''
+  try {
+    await deleteBenchmark(selectedEditableBenchmark.value.id)
+    selectedBenchmarkId.value = ''
+    await loadBenchmarks()
+    streamNotice.value = '教师基准已删除。'
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '删除教师基准失败。'
+  } finally {
+    benchmarkDeleting.value = false
   }
 }
 
@@ -1161,6 +1545,20 @@ function buildEnvironmentConfig(): EnvironmentConfig {
       goal: { ...windyEnvConfig.goal },
       wind_strengths: parseWindStrengths(windStrengthText.value, windyEnvConfig.cols),
       rewards: { ...windyEnvConfig.rewards },
+    }
+    return config
+  }
+
+  if (selectedEnvironment.value === 'frozenlake') {
+    const config: FrozenLakeConfig = {
+      environment_id: 'frozenlake',
+      rows: frozenEnvConfig.rows,
+      cols: frozenEnvConfig.cols,
+      start: { ...frozenEnvConfig.start },
+      goal: { ...frozenEnvConfig.goal },
+      holes: parseCellList(holeText.value),
+      slip_probability: frozenEnvConfig.slip_probability,
+      rewards: { ...frozenEnvConfig.rewards },
     }
     return config
   }
@@ -1404,7 +1802,10 @@ function cancelTraining() {
                 <p class="panel__eyebrow">教师基准</p>
                 <h3>{{ selectedBenchmark.name }}</h3>
               </div>
-              <button type="button" class="ghost-button" @click="applySelectedBenchmark">应用基准模板</button>
+              <div class="benchmark-callout__actions">
+                <button type="button" class="ghost-button" @click="applySelectedBenchmark">应用基准模板</button>
+                <span v-if="selectedBenchmark.is_builtin === false" class="analytics-badge">自定义</span>
+              </div>
             </div>
             <p>{{ selectedBenchmark.description }}</p>
             <p class="benchmark-callout__note">{{ selectedBenchmark.teacher_note }}</p>
@@ -1412,6 +1813,76 @@ function cancelTraining() {
               <span v-for="threshold in selectedBenchmark.thresholds" :key="threshold.metric_id">
                 {{ threshold.label }} >= {{ formatBenchmarkMetric(threshold.metric_id, threshold.min_value) }}
               </span>
+            </div>
+          </div>
+
+          <div class="benchmark-editor field--full">
+            <div class="benchmark-callout__header">
+              <div>
+                <p class="panel__eyebrow">教师自定义</p>
+                <h3>{{ selectedEditableBenchmark ? '编辑当前自定义基准' : '保存当前配置为教师基准' }}</h3>
+              </div>
+              <div class="benchmark-callout__actions">
+                <button type="button" class="ghost-button" :disabled="benchmarkSaving" @click="saveBenchmarkEditor">
+                  {{ benchmarkSaving ? '保存中...' : selectedEditableBenchmark ? '更新基准' : '保存为基准' }}
+                </button>
+                <button
+                  v-if="selectedEditableBenchmark"
+                  type="button"
+                  class="ghost-button ghost-button--danger"
+                  :disabled="benchmarkDeleting"
+                  @click="removeSelectedBenchmark"
+                >
+                  {{ benchmarkDeleting ? '删除中...' : '删除基准' }}
+                </button>
+              </div>
+            </div>
+            <p class="benchmark-callout__note">基准会保存当前环境、算法、训练参数和阈值，可在教师视角下重复复用。</p>
+
+            <div class="benchmark-editor__grid">
+              <label class="field field--full">
+                <span>基准名称</span>
+                <input v-model="benchmarkEditor.name" type="text" maxlength="80" />
+                <small class="field__hint">至少 3 个字符。</small>
+              </label>
+
+              <label class="field field--full">
+                <span>基准说明</span>
+                <textarea v-model="benchmarkEditor.description" rows="2" maxlength="240"></textarea>
+              </label>
+
+              <label class="field field--full">
+                <span>教师备注</span>
+                <textarea v-model="benchmarkEditor.teacher_note" rows="2" maxlength="240"></textarea>
+              </label>
+
+              <label class="field">
+                <span>平均奖励阈值</span>
+                <input v-model.number="benchmarkEditor.average_reward" type="number" step="0.1" />
+              </label>
+
+              <label class="field">
+                <span>最佳奖励阈值</span>
+                <input v-model.number="benchmarkEditor.best_reward" type="number" step="0.1" />
+              </label>
+
+              <label class="field">
+                <span>成功率阈值</span>
+                <input v-model.number="benchmarkEditor.success_rate" type="number" min="0" max="100" step="0.01" />
+                <small class="field__hint">支持填写 0.6 或 60，都会按 60% 处理。</small>
+              </label>
+
+              <label class="field">
+                <span>稳定窗口阈值</span>
+                <input
+                  v-model.number="benchmarkEditor.stable_success_rate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                />
+                <small class="field__hint">支持填写 0.7 或 70，都会按 70% 处理。</small>
+              </label>
             </div>
           </div>
 
@@ -1527,6 +1998,64 @@ function cancelTraining() {
             <label class="field">
               <span>悬崖坠落惩罚</span>
               <input v-model.number="cliffEnvConfig.rewards.cliff_penalty" type="number" step="1" />
+            </label>
+          </template>
+
+          <template v-else-if="selectedEnvironment === 'frozenlake'">
+            <label class="field">
+              <span>网格行数</span>
+              <input v-model.number="frozenEnvConfig.rows" type="number" min="4" max="12" />
+            </label>
+
+            <label class="field">
+              <span>网格列数</span>
+              <input v-model.number="frozenEnvConfig.cols" type="number" min="4" max="12" />
+            </label>
+
+            <label class="field">
+              <span>起点位置</span>
+              <div class="field__inline">
+                <input v-model.number="frozenEnvConfig.start.row" type="number" min="0" :max="frozenEnvConfig.rows - 1" />
+                <input v-model.number="frozenEnvConfig.start.col" type="number" min="0" :max="frozenEnvConfig.cols - 1" />
+              </div>
+            </label>
+
+            <label class="field">
+              <span>目标位置</span>
+              <div class="field__inline">
+                <input v-model.number="frozenEnvConfig.goal.row" type="number" min="0" :max="frozenEnvConfig.rows - 1" />
+                <input v-model.number="frozenEnvConfig.goal.col" type="number" min="0" :max="frozenEnvConfig.cols - 1" />
+              </div>
+            </label>
+
+            <label class="field field--full">
+              <span>冰洞单元</span>
+              <textarea v-model="holeText" rows="2" placeholder="1:1,1:3,2:3,3:0"></textarea>
+            </label>
+
+            <label class="field">
+              <span>滑移概率</span>
+              <input v-model.number="frozenEnvConfig.slip_probability" type="number" min="0" max="1" step="0.05" />
+            </label>
+
+            <label class="field">
+              <span>步进奖励</span>
+              <input v-model.number="frozenEnvConfig.rewards.step_penalty" type="number" step="0.1" />
+            </label>
+
+            <label class="field">
+              <span>目标奖励</span>
+              <input v-model.number="frozenEnvConfig.rewards.goal_reward" type="number" step="0.1" />
+            </label>
+
+            <label class="field">
+              <span>碰壁奖励</span>
+              <input v-model.number="frozenEnvConfig.rewards.wall_penalty" type="number" step="0.1" />
+            </label>
+
+            <label class="field">
+              <span>冰洞惩罚</span>
+              <input v-model.number="frozenEnvConfig.rewards.hole_penalty" type="number" step="0.1" />
             </label>
           </template>
 
@@ -1824,21 +2353,74 @@ function cancelTraining() {
             </div>
             <p class="analysis-note">{{ selectedBenchmark.teacher_note }}</p>
 
-            <div v-if="benchmarkEvaluation" class="benchmark-grid">
-              <article
-                v-for="check in [...benchmarkEvaluation.compatibilityChecks, ...benchmarkEvaluation.thresholdChecks]"
-                :key="check.label"
-                class="benchmark-check"
-                :class="check.passed ? 'benchmark-check--pass' : 'benchmark-check--fail'"
+            <template v-if="benchmarkEvaluation && benchmarkOverview">
+              <div
+                class="benchmark-overview"
+                :class="benchmarkOverview.passed ? 'benchmark-overview--pass' : 'benchmark-overview--fail'"
               >
-                <div class="benchmark-check__row">
-                  <strong>{{ check.label }}</strong>
-                  <span>{{ check.passed ? '通过' : '未通过' }}</span>
+                <div class="benchmark-overview__copy">
+                  <p class="panel__eyebrow">评估结论</p>
+                  <strong class="benchmark-overview__headline">{{ benchmarkOverview.headline }}</strong>
+                  <p class="benchmark-overview__message">{{ benchmarkOverview.message }}</p>
                 </div>
-                <small>期望 {{ check.expected }} | 实际 {{ check.actual }}</small>
-                <p>{{ check.helpText }}</p>
-              </article>
-            </div>
+                <div class="benchmark-overview__stats">
+                  <article
+                    v-for="stat in benchmarkOverviewStats"
+                    :key="stat.label"
+                    class="benchmark-overview__stat"
+                    :class="`benchmark-overview__stat--${stat.tone}`"
+                  >
+                    <span>{{ stat.label }}</span>
+                    <strong>{{ stat.value }}</strong>
+                  </article>
+                </div>
+              </div>
+
+              <div class="benchmark-section">
+                <div class="benchmark-section__label">核心指标</div>
+                <div class="benchmark-metric-grid">
+                  <article
+                    v-for="card in benchmarkMetricCards"
+                    :key="card.label"
+                    class="benchmark-metric-card"
+                    :class="card.passed ? 'benchmark-metric-card--pass' : 'benchmark-metric-card--fail'"
+                  >
+                    <div class="benchmark-metric-card__row">
+                      <span>{{ card.label }}</span>
+                      <span
+                        class="benchmark-inline-status"
+                        :class="card.passed ? 'benchmark-inline-status--pass' : 'benchmark-inline-status--fail'"
+                      >
+                        {{ card.passed ? '达标' : '未达标' }}
+                      </span>
+                    </div>
+                    <strong>{{ card.actual }}</strong>
+                    <small>目标 {{ card.expected }}</small>
+                    <p class="benchmark-metric-card__delta">{{ card.deltaText }}</p>
+                    <p class="benchmark-metric-card__hint">{{ card.helpText }}</p>
+                  </article>
+                </div>
+              </div>
+
+              <div class="benchmark-section">
+                <div class="benchmark-section__label">前置条件</div>
+                <div class="benchmark-grid benchmark-grid--compact">
+                  <article
+                    v-for="check in benchmarkEvaluation.compatibilityChecks"
+                    :key="check.label"
+                    class="benchmark-check"
+                    :class="check.passed ? 'benchmark-check--pass' : 'benchmark-check--fail'"
+                  >
+                    <div class="benchmark-check__row">
+                      <strong>{{ check.label }}</strong>
+                      <span>{{ check.passed ? '通过' : '未通过' }}</span>
+                    </div>
+                    <small>期望 {{ check.expected }} | 实际 {{ check.actual }}</small>
+                    <p>{{ check.helpText }}</p>
+                  </article>
+                </div>
+              </div>
+            </template>
             <div v-else class="comparison-empty benchmark-empty">
               请先完整运行一次实验，再与所选教师基准进行评估。
             </div>
@@ -1912,7 +2494,7 @@ function cancelTraining() {
           <p class="panel__eyebrow">系统模块</p>
           <h3>当前后端能力范围</h3>
           <ul>
-            <li>可配置 GridWorld、CliffWalking 与 WindyGridWorld 实验环境</li>
+            <li>可配置 GridWorld、CliffWalking、FrozenLake 与 WindyGridWorld 实验环境</li>
             <li>Q-Learning 与 SARSA 训练服务</li>
             <li>DQN 与 REINFORCE 训练服务</li>
             <li>HTTP 与 WebSocket 实验接口</li>
@@ -1993,6 +2575,28 @@ function cancelTraining() {
                   </div>
                   <span v-if="item.benchmark_pass_rate !== null && item.benchmark_pass_rate !== undefined" class="analytics-badge">
                     通过率 {{ (item.benchmark_pass_rate * 100).toFixed(1) }}%
+                  </span>
+                </div>
+              </div>
+            </article>
+
+            <article class="support-card">
+              <p class="panel__eyebrow">环境分布</p>
+              <h3>按训练环境统计的实验记录</h3>
+              <div class="analytics-list">
+                <div v-for="item in analytics.environments" :key="item.environment_id" class="analytics-item">
+                  <div>
+                    <strong>{{ environmentLabel(item.environment_id) }}</strong>
+                    <p>
+                      {{ item.run_count }} 次实验 | {{ item.student_runs }} 次学生提交 | {{ item.distinct_submitters }} 名提交人
+                    </p>
+                    <p>
+                      平均奖励 {{ item.average_reward.toFixed(2) }} | 平均成功率
+                      {{ (item.average_success_rate * 100).toFixed(1) }}%
+                    </p>
+                  </div>
+                  <span class="analytics-badge">
+                    最佳成功率 {{ (item.best_success_rate * 100).toFixed(1) }}%
                   </span>
                 </div>
               </div>

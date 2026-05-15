@@ -8,6 +8,7 @@ from app.schemas.experiment import (
     AssignmentAnalyticsEntry,
     BenchmarkAnalyticsSummary,
     ClassroomAnalyticsResponse,
+    EnvironmentAnalyticsEntry,
     ExperimentResult,
     StudentAnalyticsEntry,
 )
@@ -32,8 +33,9 @@ def build_classroom_analytics(
     distinct_submitters = len({result.request.submitted_by for result in results})
 
     algorithms = _build_algorithm_entries(results)
-    assignments = _build_assignment_entries(results)
-    benchmark_summary, student_benchmark_pass = _build_benchmark_summary(student_results, benchmark_id)
+    assignments = _build_assignment_entries(results, store)
+    environments = _build_environment_entries(results)
+    benchmark_summary, student_benchmark_pass = _build_benchmark_summary(student_results, benchmark_id, store)
     students = _build_student_entries(student_results, student_benchmark_pass)
 
     return ClassroomAnalyticsResponse(
@@ -47,6 +49,7 @@ def build_classroom_analytics(
         assignment_filter_id=assignment_id,
         algorithms=algorithms,
         assignments=assignments,
+        environments=environments,
         students=students,
     )
 
@@ -71,11 +74,12 @@ def _build_algorithm_entries(results: list[ExperimentResult]) -> list[AlgorithmA
 def _build_benchmark_summary(
     student_results: list[ExperimentResult],
     benchmark_id: str | None,
+    store: ExperimentStore,
 ) -> tuple[BenchmarkAnalyticsSummary | None, dict[str, int]]:
     if benchmark_id is None:
         return None, {}
 
-    benchmark = get_benchmark_preset(benchmark_id)
+    benchmark = get_benchmark_preset(benchmark_id, store)
     eligible_runs = [
         result
         for result in student_results
@@ -101,7 +105,7 @@ def _build_benchmark_summary(
     return summary, pass_by_student
 
 
-def _build_assignment_entries(results: list[ExperimentResult]) -> list[AssignmentAnalyticsEntry]:
+def _build_assignment_entries(results: list[ExperimentResult], store: ExperimentStore) -> list[AssignmentAnalyticsEntry]:
     grouped: dict[tuple[str, str], list[ExperimentResult]] = defaultdict(list)
     for result in results:
         assignment_id = result.request.assignment_id
@@ -116,7 +120,7 @@ def _build_assignment_entries(results: list[ExperimentResult]) -> list[Assignmen
         benchmark_id = _resolve_assignment_benchmark_id(items)
         benchmark_pass_rate = None
         if benchmark_id and student_items:
-            benchmark = get_benchmark_preset(benchmark_id)
+            benchmark = get_benchmark_preset(benchmark_id, store)
             eligible_items = [
                 item
                 for item in student_items
@@ -143,6 +147,29 @@ def _build_assignment_entries(results: list[ExperimentResult]) -> list[Assignmen
         )
 
     return sorted(entries, key=lambda entry: (-entry.run_count, entry.assignment_title))
+
+
+def _build_environment_entries(results: list[ExperimentResult]) -> list[EnvironmentAnalyticsEntry]:
+    grouped: dict[str, list[ExperimentResult]] = defaultdict(list)
+    for result in results:
+        grouped[result.request.environment_id].append(result)
+
+    entries = []
+    for environment_id, items in grouped.items():
+        student_items = [item for item in items if item.request.submission_role == "student"]
+        entries.append(
+            EnvironmentAnalyticsEntry(
+                environment_id=environment_id,
+                run_count=len(items),
+                student_runs=len(student_items),
+                distinct_submitters=len({item.request.submitted_by for item in items}),
+                average_reward=_safe_average(item.summary.average_reward for item in items),
+                average_success_rate=_safe_average(item.summary.success_rate for item in items),
+                best_success_rate=max(item.summary.success_rate for item in items),
+            )
+        )
+
+    return sorted(entries, key=lambda entry: (-entry.run_count, entry.environment_id))
 
 
 def _build_student_entries(

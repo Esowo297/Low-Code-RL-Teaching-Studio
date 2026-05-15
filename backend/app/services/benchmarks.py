@@ -1,10 +1,17 @@
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from app.repositories.experiment_store import ExperimentStore
 from app.schemas.experiment import (
     BenchmarkCatalogResponse,
+    BenchmarkDraft,
     BenchmarkPreset,
     BenchmarkThreshold,
     CliffWalkingConfig,
     DQNConfig,
     DQNExperimentRequest,
+    FrozenLakeConfig,
+    FrozenLakeRewardConfig,
     QLearningConfig,
     QLearningExperimentRequest,
     ReinforceConfig,
@@ -16,7 +23,7 @@ from app.schemas.experiment import (
 )
 
 
-def build_benchmark_catalog() -> BenchmarkCatalogResponse:
+def build_benchmark_catalog(store: ExperimentStore | None = None) -> BenchmarkCatalogResponse:
     return BenchmarkCatalogResponse(
         benchmarks=[
             BenchmarkPreset(
@@ -514,15 +521,235 @@ def build_benchmark_catalog() -> BenchmarkCatalogResponse:
                     ),
                 ],
             ),
+            BenchmarkPreset(
+                id="teacher_frozenlake_q_learning_baseline",
+                name="教师基准｜FrozenLake 中的 Q-Learning 稀疏奖励探索实验",
+                description="用于冰湖环境中 Q-Learning 在稀疏奖励和轻度滑移扰动下学习路径策略的教师参考阈值。",
+                teacher_note="该基准适当降低了滑移概率，并加入小幅冰洞惩罚，便于学生观察表格型方法在冰湖环境中的探索过程。",
+                request=QLearningExperimentRequest(
+                    name="教师基准｜FrozenLake Q-Learning 实验",
+                    submitted_by="课程教师",
+                    submission_role="teacher",
+                    environment_id="frozenlake",
+                    persist_result=False,
+                    env_config=FrozenLakeConfig(
+                        slip_probability=0.1,
+                        rewards=FrozenLakeRewardConfig(
+                            step_penalty=0.0,
+                            goal_reward=1.0,
+                            wall_penalty=0.0,
+                            hole_penalty=-0.2,
+                        ),
+                    ),
+                    training=TrainingConfig(episodes=800, seed=7, trace_frequency=20),
+                    algorithm_config=QLearningConfig(
+                        learning_rate=0.2,
+                        gamma=0.99,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.996,
+                        max_steps_per_episode=80,
+                    ),
+                ),
+                thresholds=[
+                    BenchmarkThreshold(
+                        metric_id="average_reward",
+                        label="平均奖励",
+                        min_value=0.24,
+                        help_text="在稀疏奖励和随机滑移条件下，平均奖励应保持为正，说明已学到可用路径。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="success_rate",
+                        label="成功率",
+                        min_value=0.34,
+                        help_text="训练过程中应在相当比例的回合内成功到达终点，而不是仅靠偶然成功一次。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="stable_success_rate",
+                        label="稳定窗口成功率",
+                        min_value=0.55,
+                        help_text="训练后期的表现应显示策略已经围绕一条可行路线逐步稳定下来。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="best_reward",
+                        label="最佳奖励",
+                        min_value=1.0,
+                        help_text="采样轨迹中至少应出现一条成功到达终点的完整路径。",
+                    ),
+                ],
+            ),
+            BenchmarkPreset(
+                id="teacher_frozenlake_sarsa_baseline",
+                name="教师基准｜FrozenLake 中的 SARSA 滑移策略对比实验",
+                description="用于冰湖环境中 SARSA 在稀疏奖励和随机滑移下学习稳定路径的教师参考阈值。",
+                teacher_note="该基准适合和 Q-Learning 对照，观察同策略更新在滑移环境中是否会形成更保守的路径偏好。",
+                request=SARSAExperimentRequest(
+                    name="教师基准｜FrozenLake SARSA 实验",
+                    submitted_by="课程教师",
+                    submission_role="teacher",
+                    environment_id="frozenlake",
+                    persist_result=False,
+                    env_config=FrozenLakeConfig(
+                        slip_probability=0.1,
+                        rewards=FrozenLakeRewardConfig(
+                            step_penalty=0.0,
+                            goal_reward=1.0,
+                            wall_penalty=0.0,
+                            hole_penalty=-0.2,
+                        ),
+                    ),
+                    training=TrainingConfig(episodes=800, seed=7, trace_frequency=20),
+                    algorithm_config=SARSAConfig(
+                        learning_rate=0.2,
+                        gamma=0.99,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.996,
+                        max_steps_per_episode=80,
+                    ),
+                ),
+                thresholds=[
+                    BenchmarkThreshold(
+                        metric_id="average_reward",
+                        label="平均奖励",
+                        min_value=0.36,
+                        help_text="平均奖励应明显高于纯探索状态，说明策略已能在稀疏奖励环境中稳定积累收益。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="success_rate",
+                        label="成功率",
+                        min_value=0.46,
+                        help_text="应多次稳定到达终点，而不是只出现零散的幸运成功回合。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="stable_success_rate",
+                        label="稳定窗口成功率",
+                        min_value=0.55,
+                        help_text="训练后期的成功率应持续高于早期探索阶段，体现策略逐步收敛。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="best_reward",
+                        label="最佳奖励",
+                        min_value=1.0,
+                        help_text="采样轨迹中至少应出现一条成功穿越冰湖的完整路径。",
+                    ),
+                ],
+            ),
+            BenchmarkPreset(
+                id="teacher_frozenlake_dqn_baseline",
+                name="教师基准｜FrozenLake 中的 DQN 稀疏价值学习实验",
+                description="用于冰湖环境中 DQN 在稀疏奖励和随机滑移条件下学习动作价值函数的教师参考阈值。",
+                teacher_note="该基准适合讨论函数逼近方法在小型离散环境中的学习表现，以及滑移噪声对样本效率的影响。",
+                request=DQNExperimentRequest(
+                    name="教师基准｜FrozenLake DQN 实验",
+                    submitted_by="课程教师",
+                    submission_role="teacher",
+                    environment_id="frozenlake",
+                    persist_result=False,
+                    env_config=FrozenLakeConfig(
+                        slip_probability=0.1,
+                        rewards=FrozenLakeRewardConfig(
+                            step_penalty=0.0,
+                            goal_reward=1.0,
+                            wall_penalty=0.0,
+                            hole_penalty=-0.2,
+                        ),
+                    ),
+                    training=TrainingConfig(episodes=260, seed=7, trace_frequency=20),
+                    algorithm_config=DQNConfig(
+                        learning_rate=0.001,
+                        gamma=0.95,
+                        epsilon_start=1.0,
+                        epsilon_min=0.05,
+                        epsilon_decay=0.992,
+                        max_steps_per_episode=80,
+                        batch_size=16,
+                        replay_buffer_size=500,
+                        target_sync_interval=20,
+                        warmup_steps=32,
+                        hidden_dim=32,
+                    ),
+                ),
+                thresholds=[
+                    BenchmarkThreshold(
+                        metric_id="average_reward",
+                        label="平均奖励",
+                        min_value=0.09,
+                        help_text="即使存在稀疏奖励和滑移噪声，平均奖励也应明显为正，说明价值函数已具备可用性。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="success_rate",
+                        label="成功率",
+                        min_value=0.22,
+                        help_text="可用的 DQN 策略应在可观比例的训练回合中成功完成任务。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="stable_success_rate",
+                        label="稳定窗口成功率",
+                        min_value=0.65,
+                        help_text="训练后期的表现应明显优于前期学习阶段，并维持相对稳定。",
+                    ),
+                    BenchmarkThreshold(
+                        metric_id="best_reward",
+                        label="最佳奖励",
+                        min_value=1.0,
+                        help_text="采样轨迹中至少应出现一条成功到达终点的高质量路径。",
+                    ),
+                ],
+            ),
         ]
     )
 
 
-def get_benchmark_preset(benchmark_id: str) -> BenchmarkPreset:
-    for benchmark in build_benchmark_catalog().benchmarks:
+def get_benchmark_preset(benchmark_id: str, store: ExperimentStore | None = None) -> BenchmarkPreset:
+    for benchmark in _list_benchmarks(store):
         if benchmark.id == benchmark_id:
             return benchmark
     raise ValueError(f"未知的教师基准：{benchmark_id}")
+
+
+def create_benchmark(store: ExperimentStore, draft: BenchmarkDraft) -> BenchmarkPreset:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    benchmark = BenchmarkPreset(
+        id=f"custom_benchmark_{uuid4().hex[:10]}",
+        name=draft.name,
+        description=draft.description,
+        teacher_note=draft.teacher_note,
+        request=_normalize_benchmark_request(draft),
+        thresholds=draft.thresholds,
+        is_builtin=False,
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    store.save_benchmark(benchmark)
+    return benchmark
+
+
+def update_benchmark(store: ExperimentStore, benchmark_id: str, draft: BenchmarkDraft) -> BenchmarkPreset:
+    existing = get_benchmark_preset(benchmark_id, store)
+    if existing.is_builtin:
+        raise ValueError("内置教师基准不支持修改")
+
+    benchmark = BenchmarkPreset(
+        id=existing.id,
+        name=draft.name,
+        description=draft.description,
+        teacher_note=draft.teacher_note,
+        request=_normalize_benchmark_request(draft),
+        thresholds=draft.thresholds,
+        is_builtin=False,
+        created_at=existing.created_at,
+        updated_at=datetime.now(timezone.utc).isoformat(),
+    )
+    store.save_benchmark(benchmark)
+    return benchmark
+
+
+def delete_benchmark(store: ExperimentStore, benchmark_id: str) -> None:
+    existing = get_benchmark_preset(benchmark_id, store)
+    if existing.is_builtin:
+        raise ValueError("内置教师基准不支持删除")
+    store.delete_benchmark(benchmark_id)
 
 
 def get_summary_metric(result, metric_id: str) -> float:
@@ -553,7 +780,25 @@ def matches_environment_config(left_env, right_env) -> bool:
 
 def _normalize_environment_config(env_config) -> dict:
     payload = env_config.model_dump(mode="json")
-    for key in ("obstacles", "traps", "cliffs"):
+    for key in ("obstacles", "traps", "cliffs", "holes"):
         if key in payload:
             payload[key] = sorted(payload[key], key=lambda cell: (cell["row"], cell["col"]))
     return payload
+
+
+def _list_benchmarks(store: ExperimentStore | None = None) -> list[BenchmarkPreset]:
+    benchmarks = list(build_benchmark_catalog().benchmarks)
+    if store is not None:
+        benchmarks.extend(store.list_benchmarks())
+    return benchmarks
+
+
+def _normalize_benchmark_request(draft: BenchmarkDraft):
+    payload = draft.request.model_dump(mode="json")
+    payload["name"] = draft.name
+    payload["submitted_by"] = "课程教师"
+    payload["submission_role"] = "teacher"
+    payload["persist_result"] = False
+    payload["assignment_id"] = None
+    payload["assignment_title"] = None
+    return type(draft.request).model_validate(payload)

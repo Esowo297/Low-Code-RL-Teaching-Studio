@@ -1,5 +1,5 @@
 export type AlgorithmId = 'q_learning' | 'sarsa' | 'dqn' | 'reinforce'
-export type EnvironmentId = 'gridworld' | 'cliffwalking' | 'windygridworld'
+export type EnvironmentId = 'gridworld' | 'cliffwalking' | 'windygridworld' | 'frozenlake'
 export type SubmissionRole = 'teacher' | 'student'
 
 export interface GridPosition {
@@ -25,6 +25,13 @@ export interface WindyRewardConfig {
   step_penalty: number
   goal_reward: number
   wall_penalty: number
+}
+
+export interface FrozenLakeRewardConfig {
+  step_penalty: number
+  goal_reward: number
+  wall_penalty: number
+  hole_penalty: number
 }
 
 export interface GridWorldConfig {
@@ -59,7 +66,18 @@ export interface WindyGridWorldConfig {
   rewards: WindyRewardConfig
 }
 
-export type EnvironmentConfig = GridWorldConfig | CliffWalkingConfig | WindyGridWorldConfig
+export interface FrozenLakeConfig {
+  environment_id: 'frozenlake'
+  rows: number
+  cols: number
+  start: GridPosition
+  goal: GridPosition
+  holes: GridPosition[]
+  slip_probability: number
+  rewards: FrozenLakeRewardConfig
+}
+
+export type EnvironmentConfig = GridWorldConfig | CliffWalkingConfig | WindyGridWorldConfig | FrozenLakeConfig
 
 export interface QLearningConfig {
   learning_rate: number
@@ -238,6 +256,17 @@ export interface BenchmarkPreset {
   teacher_note: string
   request: ExperimentRequest
   thresholds: BenchmarkThreshold[]
+  is_builtin?: boolean
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface BenchmarkDraft {
+  name: string
+  description: string
+  teacher_note: string
+  request: ExperimentRequest
+  thresholds: BenchmarkThreshold[]
 }
 
 export interface BenchmarkCatalogResponse {
@@ -300,6 +329,16 @@ export interface AssignmentAnalyticsEntry {
   benchmark_pass_rate?: number | null
 }
 
+export interface EnvironmentAnalyticsEntry {
+  environment_id: EnvironmentId
+  run_count: number
+  student_runs: number
+  distinct_submitters: number
+  average_reward: number
+  average_success_rate: number
+  best_success_rate: number
+}
+
 export interface ClassroomAnalyticsResponse {
   total_runs: number
   student_runs: number
@@ -311,6 +350,7 @@ export interface ClassroomAnalyticsResponse {
   assignment_filter_id?: string | null
   algorithms: AlgorithmAnalyticsEntry[]
   assignments: AssignmentAnalyticsEntry[]
+  environments: EnvironmentAnalyticsEntry[]
   students: StudentAnalyticsEntry[]
 }
 

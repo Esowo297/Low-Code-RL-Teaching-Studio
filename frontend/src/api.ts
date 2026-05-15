@@ -1,6 +1,8 @@
 import type {
   AssignmentCatalogResponse,
   BenchmarkCatalogResponse,
+  BenchmarkDraft,
+  BenchmarkPreset,
   CatalogResponse,
   ClassroomAnalyticsResponse,
   ExperimentCancelledEvent,
@@ -33,11 +35,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const payload = await response.json()
       if (typeof payload.detail === 'string') {
         message = payload.detail
+      } else if (Array.isArray(payload.detail)) {
+        const firstIssue = payload.detail[0]
+        if (firstIssue && typeof firstIssue.msg === 'string') {
+          const path = Array.isArray(firstIssue.loc) ? firstIssue.loc.slice(1).join('.') : ''
+          message = path ? `${path}: ${firstIssue.msg}` : firstIssue.msg
+        }
       }
     } catch {
       // Ignore JSON parsing failures and keep the default error message.
     }
     throw new Error(message)
+  }
+
+  if (response.status === 204) {
+    return undefined as T
   }
 
   return response.json() as Promise<T>
@@ -49,6 +61,26 @@ export function getCatalog(): Promise<CatalogResponse> {
 
 export function getBenchmarks(): Promise<BenchmarkCatalogResponse> {
   return request<BenchmarkCatalogResponse>('/api/benchmarks')
+}
+
+export function createBenchmark(payload: BenchmarkDraft): Promise<BenchmarkPreset> {
+  return request<BenchmarkPreset>('/api/benchmarks', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateBenchmark(benchmarkId: string, payload: BenchmarkDraft): Promise<BenchmarkPreset> {
+  return request<BenchmarkPreset>(`/api/benchmarks/${benchmarkId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteBenchmark(benchmarkId: string): Promise<void> {
+  await request<void>(`/api/benchmarks/${benchmarkId}`, {
+    method: 'DELETE',
+  })
 }
 
 export function getAssignments(): Promise<AssignmentCatalogResponse> {
@@ -99,6 +131,12 @@ export async function renderExperimentReport(payload: ExperimentReportRequest): 
       const data = await response.json()
       if (typeof data.detail === 'string') {
         message = data.detail
+      } else if (Array.isArray(data.detail)) {
+        const firstIssue = data.detail[0]
+        if (firstIssue && typeof firstIssue.msg === 'string') {
+          const path = Array.isArray(firstIssue.loc) ? firstIssue.loc.slice(1).join('.') : ''
+          message = path ? `${path}: ${firstIssue.msg}` : firstIssue.msg
+        }
       }
     } catch {
       // Ignore JSON parsing failures and keep the default error message.

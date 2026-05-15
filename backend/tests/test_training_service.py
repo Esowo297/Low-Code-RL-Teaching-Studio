@@ -8,6 +8,7 @@ from app.main import app
 from app.repositories.experiment_store import ExperimentStore
 from app.rl.envs.cliffwalking import CliffWalkingEnv
 from app.rl.envs.factory import create_environment
+from app.rl.envs.frozenlake import FrozenLakeEnv
 from app.rl.envs.gridworld import GridWorldEnv
 from app.rl.envs.windygridworld import WindyGridWorldEnv
 from app.schemas.experiment import (
@@ -16,6 +17,8 @@ from app.schemas.experiment import (
     DQNExperimentRequest,
     ExperimentResult,
     ExperimentSummary,
+    FrozenLakeConfig,
+    FrozenLakeRewardConfig,
     GridEnvironmentView,
     GridWorldConfig,
     QLearningExperimentRequest,
@@ -72,6 +75,21 @@ def test_environment_factory_creates_windygridworld_env_from_request() -> None:
     assert env.state_count == 70
 
 
+def test_environment_factory_creates_frozenlake_env_from_request() -> None:
+    request = QLearningExperimentRequest(
+        environment_id="frozenlake",
+        env_config=FrozenLakeConfig(),
+    )
+
+    env = create_environment(request)
+
+    assert isinstance(env, FrozenLakeEnv)
+    assert env.environment_id == "frozenlake"
+    assert env.rows == 4
+    assert env.cols == 4
+    assert env.state_count == 16
+
+
 def test_gridworld_config_migrates_legacy_size_to_rows_and_cols() -> None:
     config = GridWorldConfig(size=8)
     payload = config.model_dump(mode="json")
@@ -112,6 +130,18 @@ def test_windygridworld_config_builds_default_start_goal_and_wind_strengths() ->
     assert config.goal.row == 3
     assert config.goal.col == 7
     assert config.wind_strengths == [0, 0, 0, 1, 1, 1, 2, 2, 1, 0]
+
+
+def test_frozenlake_config_builds_default_start_goal_holes_and_slip_probability() -> None:
+    config = FrozenLakeConfig()
+
+    assert config.environment_id == "frozenlake"
+    assert config.start.row == 0
+    assert config.start.col == 0
+    assert config.goal.row == 3
+    assert config.goal.col == 3
+    assert config.slip_probability == 0.2
+    assert [(cell.row, cell.col) for cell in config.holes] == [(1, 1), (1, 3), (2, 3), (3, 0)]
 
 
 def test_experiment_result_populates_environment_view_from_legacy_policy_grid() -> None:
@@ -211,6 +241,25 @@ def test_training_service_creates_windygridworld_q_learning_result(tmp_path: Pat
     assert result.policy_grid[3][7] == "GOAL"
 
 
+def test_training_service_creates_frozenlake_q_learning_result(tmp_path: Path) -> None:
+    service = TrainingService(store=ExperimentStore(base_path=tmp_path))
+    request = QLearningExperimentRequest(
+        environment_id="frozenlake",
+        env_config=FrozenLakeConfig(),
+        training=TrainingConfig(episodes=25, seed=3, trace_frequency=5),
+    )
+
+    result = service.run_experiment(request)
+
+    assert result.request.environment_id == "frozenlake"
+    assert len(result.metrics) == 25
+    assert len(result.policy_grid) == 4
+    assert len(result.policy_grid[0]) == 4
+    assert result.policy_grid[0][0] == "START"
+    assert result.policy_grid[3][3] == "GOAL"
+    assert any("HOLE" in row for row in result.policy_grid)
+
+
 def test_cliffwalking_result_does_not_match_gridworld_benchmark(tmp_path: Path) -> None:
     service = TrainingService(store=ExperimentStore(base_path=tmp_path))
     result = service.run_experiment(
@@ -249,6 +298,28 @@ def test_windygridworld_result_does_not_match_benchmark_with_different_wind_stre
         )
     )
     benchmark = get_benchmark_preset("teacher_windygridworld_q_learning_baseline")
+
+    assert passes_benchmark_preset(result, benchmark) is False
+
+
+def test_frozenlake_result_does_not_match_benchmark_with_different_slip_probability(tmp_path: Path) -> None:
+    service = TrainingService(store=ExperimentStore(base_path=tmp_path))
+    result = service.run_experiment(
+        QLearningExperimentRequest(
+            environment_id="frozenlake",
+            env_config=FrozenLakeConfig(
+                slip_probability=0.2,
+                rewards=FrozenLakeRewardConfig(
+                    step_penalty=0.0,
+                    goal_reward=1.0,
+                    wall_penalty=0.0,
+                    hole_penalty=-0.2,
+                ),
+            ),
+            training=TrainingConfig(episodes=20, seed=4, trace_frequency=5),
+        )
+    )
+    benchmark = get_benchmark_preset("teacher_frozenlake_q_learning_baseline")
 
     assert passes_benchmark_preset(result, benchmark) is False
 
@@ -471,7 +542,7 @@ def test_get_benchmark_catalog_returns_teacher_presets() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["benchmarks"]) >= 10
+    assert len(payload["benchmarks"]) >= 13
     benchmark_ids = {benchmark["id"] for benchmark in payload["benchmarks"]}
     assert {
         "teacher_gridworld_q_learning_baseline",
@@ -484,6 +555,9 @@ def test_get_benchmark_catalog_returns_teacher_presets() -> None:
         "teacher_windygridworld_q_learning_baseline",
         "teacher_windygridworld_sarsa_baseline",
         "teacher_windygridworld_dqn_baseline",
+        "teacher_frozenlake_q_learning_baseline",
+        "teacher_frozenlake_sarsa_baseline",
+        "teacher_frozenlake_dqn_baseline",
     }.issubset(benchmark_ids)
     assert payload["benchmarks"][0]["request"]["algorithm_id"] == "q_learning"
     assert payload["benchmarks"][1]["request"]["algorithm_id"] == "sarsa"
@@ -497,9 +571,13 @@ def test_get_benchmark_catalog_returns_teacher_presets() -> None:
         benchmark for benchmark in payload["benchmarks"] if benchmark["request"]["environment_id"] == "windygridworld"
     ]
     assert {benchmark["request"]["algorithm_id"] for benchmark in windy_benchmarks} == {"q_learning", "sarsa", "dqn"}
+    frozenlake_benchmarks = [
+        benchmark for benchmark in payload["benchmarks"] if benchmark["request"]["environment_id"] == "frozenlake"
+    ]
+    assert {benchmark["request"]["algorithm_id"] for benchmark in frozenlake_benchmarks} == {"q_learning", "sarsa", "dqn"}
 
 
-def test_get_catalog_exposes_cliffwalking_environment() -> None:
+def test_get_catalog_exposes_grid_environment_family() -> None:
     client = TestClient(app)
 
     response = client.get("/api/catalog")
@@ -507,7 +585,7 @@ def test_get_catalog_exposes_cliffwalking_environment() -> None:
     assert response.status_code == 200
     payload = response.json()
     environment_ids = {item["id"] for item in payload["environments"]}
-    assert {"gridworld", "cliffwalking", "windygridworld"}.issubset(environment_ids)
+    assert {"gridworld", "cliffwalking", "windygridworld", "frozenlake"}.issubset(environment_ids)
 
 
 def test_get_assignment_catalog_returns_builtin_templates() -> None:
@@ -517,7 +595,7 @@ def test_get_assignment_catalog_returns_builtin_templates() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["assignments"]) >= 10
+    assert len(payload["assignments"]) >= 13
     assignment_ids = {assignment["id"] for assignment in payload["assignments"]}
     assert {
         "assignment_gridworld_q_learning_convergence",
@@ -530,6 +608,9 @@ def test_get_assignment_catalog_returns_builtin_templates() -> None:
         "assignment_windygridworld_q_learning_wind_compensation",
         "assignment_windygridworld_sarsa_online_correction",
         "assignment_windygridworld_dqn_value_learning",
+        "assignment_frozenlake_q_learning_sparse_reward",
+        "assignment_frozenlake_sarsa_slip_comparison",
+        "assignment_frozenlake_dqn_sparse_value_learning",
     }.issubset(assignment_ids)
     assert payload["assignments"][0]["benchmark_id"] == "teacher_gridworld_q_learning_baseline"
     assert payload["assignments"][1]["request"]["algorithm_id"] == "sarsa"
@@ -541,6 +622,10 @@ def test_get_assignment_catalog_returns_builtin_templates() -> None:
         assignment for assignment in payload["assignments"] if assignment["request"]["environment_id"] == "windygridworld"
     ]
     assert {assignment["request"]["algorithm_id"] for assignment in windy_assignments} == {"q_learning", "sarsa", "dqn"}
+    frozenlake_assignments = [
+        assignment for assignment in payload["assignments"] if assignment["request"]["environment_id"] == "frozenlake"
+    ]
+    assert {assignment["request"]["algorithm_id"] for assignment in frozenlake_assignments} == {"q_learning", "sarsa", "dqn"}
 
 
 def test_render_report_endpoint_returns_markdown_with_benchmark_section(tmp_path: Path) -> None:
@@ -613,6 +698,30 @@ def test_render_report_endpoint_supports_windygridworld_configuration(tmp_path: 
     assert "悬崖单元" not in response.text
 
 
+def test_render_report_endpoint_supports_frozenlake_configuration(tmp_path: Path) -> None:
+    service = TrainingService(store=ExperimentStore(base_path=tmp_path))
+    result = service.run_experiment(
+        QLearningExperimentRequest(
+            environment_id="frozenlake",
+            env_config=FrozenLakeConfig(),
+            training=TrainingConfig(episodes=25, seed=6, trace_frequency=5),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/reports/render",
+        json={
+            "result": result.model_dump(mode="json"),
+        },
+    )
+
+    assert response.status_code == 200
+    assert "FrozenLake" in response.text
+    assert "滑移概率" in response.text
+    assert "冰洞单元" in response.text
+
+
 def test_classroom_analytics_endpoint_aggregates_saved_runs(tmp_path: Path) -> None:
     original_store = routed_training_service.store
     routed_training_service.store = ExperimentStore(base_path=tmp_path)
@@ -680,6 +789,8 @@ def test_classroom_analytics_endpoint_aggregates_saved_runs(tmp_path: Path) -> N
         assert payload["benchmark"]["benchmark_id"] == "teacher_gridworld_q_learning_baseline"
         assert payload["benchmark"]["evaluated_runs"] == 1
         assert payload["assignments"][0]["assignment_id"] == "assignment_gridworld_q_learning_convergence"
+        assert payload["environments"][0]["environment_id"] == "gridworld"
+        assert payload["environments"][0]["run_count"] == 2
         assert {entry["submitted_by"] for entry in payload["students"]} == {"Alice"}
     finally:
         routed_training_service.store = original_store
@@ -727,6 +838,53 @@ def test_classroom_analytics_ignores_shape_mismatched_runs_for_cliff_benchmark(t
         routed_training_service.store = original_store
 
 
+def test_classroom_analytics_groups_runs_by_environment(tmp_path: Path) -> None:
+    original_store = routed_training_service.store
+    routed_training_service.store = ExperimentStore(base_path=tmp_path)
+
+    try:
+        routed_training_service.run_experiment(
+            QLearningExperimentRequest(
+                submitted_by="Alice",
+                submission_role="student",
+                environment_id="gridworld",
+                training=TrainingConfig(episodes=20, seed=41, trace_frequency=4),
+            )
+        )
+        routed_training_service.run_experiment(
+            QLearningExperimentRequest(
+                submitted_by="Bob",
+                submission_role="student",
+                environment_id="cliffwalking",
+                env_config=CliffWalkingConfig(),
+                training=TrainingConfig(episodes=20, seed=42, trace_frequency=4),
+            )
+        )
+        routed_training_service.run_experiment(
+            QLearningExperimentRequest(
+                submitted_by="Carol",
+                submission_role="teacher",
+                environment_id="cliffwalking",
+                env_config=CliffWalkingConfig(),
+                training=TrainingConfig(episodes=20, seed=43, trace_frequency=4),
+            )
+        )
+
+        client = TestClient(app)
+        response = client.get("/api/analytics/classroom", params={"limit": 10})
+
+        assert response.status_code == 200
+        payload = response.json()
+        environments = {item["environment_id"]: item for item in payload["environments"]}
+        assert environments["gridworld"]["run_count"] == 1
+        assert environments["gridworld"]["student_runs"] == 1
+        assert environments["cliffwalking"]["run_count"] == 2
+        assert environments["cliffwalking"]["student_runs"] == 1
+        assert environments["cliffwalking"]["distinct_submitters"] == 2
+    finally:
+        routed_training_service.store = original_store
+
+
 def test_classroom_analytics_ignores_config_mismatched_runs_for_windy_benchmark(tmp_path: Path) -> None:
     original_store = routed_training_service.store
     routed_training_service.store = ExperimentStore(base_path=tmp_path)
@@ -765,6 +923,117 @@ def test_classroom_analytics_ignores_config_mismatched_runs_for_windy_benchmark(
         assert payload["total_runs"] == 2
         assert payload["benchmark"]["benchmark_id"] == "teacher_windygridworld_q_learning_baseline"
         assert payload["benchmark"]["evaluated_runs"] == 1
+    finally:
+        routed_training_service.store = original_store
+
+
+def test_custom_benchmark_crud_endpoints_round_trip(tmp_path: Path) -> None:
+    original_store = routed_training_service.store
+    routed_training_service.store = ExperimentStore(base_path=tmp_path)
+
+    try:
+        client = TestClient(app)
+        request_payload = QLearningExperimentRequest().model_dump(mode="json")
+        request_payload["name"] = "GridWorld Q-Learning 自定义基准"
+        request_payload["submitted_by"] = "课程教师"
+        request_payload["submission_role"] = "teacher"
+        request_payload["persist_result"] = False
+        request_payload["assignment_id"] = None
+        request_payload["assignment_title"] = None
+
+        draft = {
+            "name": "GridWorld Q-Learning 自定义基准",
+            "description": "用于课堂阶段性考核的自定义教师基准。",
+            "teacher_note": "要求学生在默认环境下达到稳定成功。",
+            "request": request_payload,
+            "thresholds": [
+                {"metric_id": "average_reward", "label": "平均奖励", "min_value": -14.0, "help_text": "平均奖励达标。"},
+                {"metric_id": "best_reward", "label": "最佳奖励", "min_value": 8.0, "help_text": "最佳奖励达标。"},
+                {"metric_id": "success_rate", "label": "成功率", "min_value": 0.5, "help_text": "成功率达标。"},
+                {
+                    "metric_id": "stable_success_rate",
+                    "label": "稳定窗口",
+                    "min_value": 0.6,
+                    "help_text": "后期成功率达标。",
+                },
+            ],
+        }
+
+        create_response = client.post("/api/benchmarks", json=draft)
+        assert create_response.status_code == 200
+        created = create_response.json()
+        assert created["is_builtin"] is False
+        assert created["request"]["submission_role"] == "teacher"
+        assert created["request"]["persist_result"] is False
+
+        list_response = client.get("/api/benchmarks")
+        assert list_response.status_code == 200
+        custom_entries = [item for item in list_response.json()["benchmarks"] if item["id"] == created["id"]]
+        assert len(custom_entries) == 1
+
+        draft["teacher_note"] = "更新后的教师备注。"
+        draft["thresholds"][0]["min_value"] = -12.5
+        update_response = client.put(f"/api/benchmarks/{created['id']}", json=draft)
+        assert update_response.status_code == 200
+        updated = update_response.json()
+        assert updated["teacher_note"] == "更新后的教师备注。"
+        assert updated["thresholds"][0]["min_value"] == -12.5
+
+        delete_response = client.delete(f"/api/benchmarks/{created['id']}")
+        assert delete_response.status_code == 204
+
+        final_list_response = client.get("/api/benchmarks")
+        final_ids = {item["id"] for item in final_list_response.json()["benchmarks"]}
+        assert created["id"] not in final_ids
+    finally:
+        routed_training_service.store = original_store
+
+
+def test_custom_benchmark_can_be_used_in_report_rendering(tmp_path: Path) -> None:
+    original_store = routed_training_service.store
+    routed_training_service.store = ExperimentStore(base_path=tmp_path)
+
+    try:
+        client = TestClient(app)
+        result = routed_training_service.run_experiment(QLearningExperimentRequest())
+        request_payload = QLearningExperimentRequest().model_dump(mode="json")
+        request_payload["name"] = "GridWorld Q-Learning 自定义基准"
+        request_payload["submitted_by"] = "课程教师"
+        request_payload["submission_role"] = "teacher"
+        request_payload["persist_result"] = False
+        request_payload["assignment_id"] = None
+        request_payload["assignment_title"] = None
+
+        draft = {
+            "name": "GridWorld Q-Learning 自定义基准",
+            "description": "用于报告联动验证的基准。",
+            "teacher_note": "请检查报告里是否引用了自定义基准。",
+            "request": request_payload,
+            "thresholds": [
+                {"metric_id": "average_reward", "label": "平均奖励", "min_value": -14.0, "help_text": "平均奖励达标。"},
+                {"metric_id": "best_reward", "label": "最佳奖励", "min_value": 8.0, "help_text": "最佳奖励达标。"},
+                {"metric_id": "success_rate", "label": "成功率", "min_value": 0.5, "help_text": "成功率达标。"},
+                {
+                    "metric_id": "stable_success_rate",
+                    "label": "稳定窗口",
+                    "min_value": 0.6,
+                    "help_text": "后期成功率达标。",
+                },
+            ],
+        }
+        benchmark_id = client.post("/api/benchmarks", json=draft).json()["id"]
+
+        response = client.post(
+            "/api/reports/render",
+            json={
+                "result": result.model_dump(mode="json"),
+                "benchmark_id": benchmark_id,
+            },
+        )
+
+        assert response.status_code == 200
+        assert "GridWorld Q-Learning 自定义基准" in response.text
+        assert "自定义基准" in response.text
     finally:
         routed_training_service.store = original_store
 

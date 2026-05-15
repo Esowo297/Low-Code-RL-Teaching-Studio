@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable
 
+from app.repositories.experiment_store import ExperimentStore
 from app.schemas.experiment import BenchmarkPreset, BenchmarkThreshold, ExperimentReportRequest, ExperimentResult
 from app.services.benchmarks import (
     get_benchmark_preset,
@@ -12,9 +13,9 @@ from app.services.benchmarks import (
 )
 
 
-def render_experiment_report(request: ExperimentReportRequest) -> str:
+def render_experiment_report(request: ExperimentReportRequest, store: ExperimentStore | None = None) -> str:
     result = request.result
-    benchmark = get_benchmark_preset(request.benchmark_id) if request.benchmark_id else None
+    benchmark = get_benchmark_preset(request.benchmark_id, store) if request.benchmark_id else None
     generated_at = datetime.now(timezone.utc).isoformat()
 
     sections = [
@@ -92,6 +93,16 @@ def _render_configuration(result: ExperimentResult) -> Iterable[str]:
             f"步进 {env_config.rewards.step_penalty}，"
             f"目标 {env_config.rewards.goal_reward}，"
             f"碰壁 {env_config.rewards.wall_penalty}"
+        )
+    elif request.environment_id == "frozenlake":
+        yield f"- 冰洞单元：{_format_cell_list(env_config.holes)}"
+        yield f"- 滑移概率：{env_config.slip_probability}"
+        yield (
+            "- 奖励设置："
+            f"步进 {env_config.rewards.step_penalty}，"
+            f"目标 {env_config.rewards.goal_reward}，"
+            f"碰壁 {env_config.rewards.wall_penalty}，"
+            f"冰洞 {env_config.rewards.hole_penalty}"
         )
     else:
         yield f"- 障碍单元：{_format_cell_list(env_config.obstacles)}"
@@ -219,6 +230,14 @@ def _render_interpretation(result: ExperimentResult, benchmark: BenchmarkPreset 
         elif result.request.algorithm_id == "dqn":
             notes.append("- DQN 在 WindyGridWorld 中能够较快学到稳定的抗风策略，适合用于展示函数逼近在离散网格中的效果。")
 
+    if result.request.environment_id == "frozenlake":
+        if result.request.algorithm_id in {"q_learning", "sarsa"}:
+            notes.append("- 冰湖环境的关键在于稀疏奖励、终止冰洞和随机滑移，表格型方法通常需要较多试错才能学到稳定路径。")
+        elif result.request.algorithm_id == "dqn":
+            notes.append("- DQN 可以在冰湖环境中学到可用策略，但滑移噪声会让样本效率和超参数选择变得更敏感。")
+        elif result.request.algorithm_id == "reinforce":
+            notes.append("- REINFORCE 在冰湖环境中会明显受到高方差回报影响，适合用来展示稀疏奖励环境下训练不稳定的问题。")
+
     return notes
 
 
@@ -256,6 +275,8 @@ def _format_environment_signature(env_config) -> str:
         return prefix + f" | 悬崖 {len(env_config.cliffs)}"
     if env_config.environment_id == "windygridworld":
         return prefix + f" | 风列 {_format_wind_strengths(env_config.wind_strengths)}"
+    if env_config.environment_id == "frozenlake":
+        return prefix + f" | 冰洞 {len(env_config.holes)} | 滑移 {env_config.slip_probability}"
     return prefix
 
 
@@ -288,6 +309,8 @@ def _format_environment_id(environment_id: str) -> str:
         return "CliffWalking"
     if environment_id == "windygridworld":
         return "WindyGridWorld"
+    if environment_id == "frozenlake":
+        return "FrozenLake"
     return environment_id
 
 
