@@ -1,7 +1,7 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket
+from fastapi import APIRouter, Header, HTTPException, Query, WebSocket
 from fastapi.responses import PlainTextResponse
 from pydantic import TypeAdapter, ValidationError
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -32,6 +32,11 @@ training_service = TrainingService()
 experiment_request_adapter = TypeAdapter(ExperimentRequest)
 
 
+def _require_teacher_role(actor_role: str | None) -> None:
+    if actor_role != "teacher":
+        raise HTTPException(status_code=403, detail="只有教师视角可以管理教师基准")
+
+
 @router.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
@@ -51,12 +56,21 @@ def get_benchmarks() -> BenchmarkCatalogResponse:
 
 
 @router.post("/benchmarks", response_model=BenchmarkPreset)
-def create_benchmark_record(request: BenchmarkDraft) -> BenchmarkPreset:
+def create_benchmark_record(
+    request: BenchmarkDraft,
+    actor_role: Annotated[str | None, Header(alias="X-Actor-Role")] = None,
+) -> BenchmarkPreset:
+    _require_teacher_role(actor_role)
     return create_benchmark(training_service.store, request)
 
 
 @router.put("/benchmarks/{benchmark_id}", response_model=BenchmarkPreset)
-def update_benchmark_record(benchmark_id: str, request: BenchmarkDraft) -> BenchmarkPreset:
+def update_benchmark_record(
+    benchmark_id: str,
+    request: BenchmarkDraft,
+    actor_role: Annotated[str | None, Header(alias="X-Actor-Role")] = None,
+) -> BenchmarkPreset:
+    _require_teacher_role(actor_role)
     try:
         return update_benchmark(training_service.store, benchmark_id, request)
     except ValueError as exc:
@@ -66,7 +80,11 @@ def update_benchmark_record(benchmark_id: str, request: BenchmarkDraft) -> Bench
 
 
 @router.delete("/benchmarks/{benchmark_id}", status_code=204)
-def delete_benchmark_record(benchmark_id: str) -> None:
+def delete_benchmark_record(
+    benchmark_id: str,
+    actor_role: Annotated[str | None, Header(alias="X-Actor-Role")] = None,
+) -> None:
+    _require_teacher_role(actor_role)
     try:
         delete_benchmark(training_service.store, benchmark_id)
     except ValueError as exc:

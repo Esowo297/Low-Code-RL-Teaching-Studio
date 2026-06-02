@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime data
+data/
+backend/data/
+backend/tmp_eval_data/
+backend/tmp_eval_tune/
+*.db
+*.sqlite
+*.sqlite3
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# IDE and OS
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.local

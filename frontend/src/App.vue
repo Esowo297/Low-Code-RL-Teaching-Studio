@@ -424,6 +424,7 @@ const selectedEditableBenchmark = computed<BenchmarkPreset | null>(() => {
 const activeRunId = computed(() => currentResult.value?.run_id ?? liveRunId.value)
 const showResults = computed(() => Boolean(currentResult.value || liveMetrics.value.length || loading.value))
 const showTeacherAnalytics = computed(() => viewerRole.value === 'teacher')
+const canManageBenchmarks = computed(() => viewerRole.value === 'teacher')
 const finalPolicyGrid = computed(() => resultGrid(currentResult.value))
 const policyGridColumnCount = computed(() => Math.max(finalPolicyGrid.value[0]?.length ?? 0, 0))
 const widePolicyGrid = computed(() => policyGridColumnCount.value >= 10)
@@ -1363,14 +1364,19 @@ function buildBenchmarkDraft(): BenchmarkDraft {
 }
 
 async function saveBenchmarkEditor() {
+  if (!canManageBenchmarks.value) {
+    errorMessage.value = '只有教师视角可以保存教师基准。'
+    return
+  }
+
   benchmarkSaving.value = true
   errorMessage.value = ''
   const editingBenchmarkId = selectedEditableBenchmark.value?.id ?? null
   try {
     const draft = buildBenchmarkDraft()
     const saved = editingBenchmarkId
-      ? await updateBenchmark(editingBenchmarkId, draft)
-      : await createBenchmark(draft)
+      ? await updateBenchmark(editingBenchmarkId, draft, { role: viewerRole.value })
+      : await createBenchmark(draft, { role: viewerRole.value })
     await loadBenchmarks()
     selectedBenchmarkId.value = saved.id
     streamNotice.value = editingBenchmarkId ? '教师基准已更新。' : '教师基准已保存。'
@@ -1382,6 +1388,11 @@ async function saveBenchmarkEditor() {
 }
 
 async function removeSelectedBenchmark() {
+  if (!canManageBenchmarks.value) {
+    errorMessage.value = '只有教师视角可以删除教师基准。'
+    return
+  }
+
   if (!selectedEditableBenchmark.value) {
     return
   }
@@ -1389,7 +1400,7 @@ async function removeSelectedBenchmark() {
   benchmarkDeleting.value = true
   errorMessage.value = ''
   try {
-    await deleteBenchmark(selectedEditableBenchmark.value.id)
+    await deleteBenchmark(selectedEditableBenchmark.value.id, { role: viewerRole.value })
     selectedBenchmarkId.value = ''
     await loadBenchmarks()
     streamNotice.value = '教师基准已删除。'
@@ -1816,7 +1827,7 @@ function cancelTraining() {
             </div>
           </div>
 
-          <div class="benchmark-editor field--full">
+          <div v-if="canManageBenchmarks" class="benchmark-editor field--full">
             <div class="benchmark-callout__header">
               <div>
                 <p class="panel__eyebrow">教师自定义</p>

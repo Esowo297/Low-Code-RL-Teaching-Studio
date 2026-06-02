@@ -15,6 +15,7 @@ import type {
   ExperimentStartedEvent,
   ExperimentStreamEvent,
   HistoryEntry,
+  SubmissionRole,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
@@ -63,23 +64,40 @@ export function getBenchmarks(): Promise<BenchmarkCatalogResponse> {
   return request<BenchmarkCatalogResponse>('/api/benchmarks')
 }
 
-export function createBenchmark(payload: BenchmarkDraft): Promise<BenchmarkPreset> {
+export interface BenchmarkActorContext {
+  role: SubmissionRole
+}
+
+function benchmarkActorHeaders(actor: BenchmarkActorContext): HeadersInit {
+  return {
+    'X-Actor-Role': actor.role,
+  }
+}
+
+export function createBenchmark(payload: BenchmarkDraft, actor: BenchmarkActorContext): Promise<BenchmarkPreset> {
   return request<BenchmarkPreset>('/api/benchmarks', {
     method: 'POST',
+    headers: benchmarkActorHeaders(actor),
     body: JSON.stringify(payload),
   })
 }
 
-export function updateBenchmark(benchmarkId: string, payload: BenchmarkDraft): Promise<BenchmarkPreset> {
+export function updateBenchmark(
+  benchmarkId: string,
+  payload: BenchmarkDraft,
+  actor: BenchmarkActorContext,
+): Promise<BenchmarkPreset> {
   return request<BenchmarkPreset>(`/api/benchmarks/${benchmarkId}`, {
     method: 'PUT',
+    headers: benchmarkActorHeaders(actor),
     body: JSON.stringify(payload),
   })
 }
 
-export async function deleteBenchmark(benchmarkId: string): Promise<void> {
+export async function deleteBenchmark(benchmarkId: string, actor: BenchmarkActorContext): Promise<void> {
   await request<void>(`/api/benchmarks/${benchmarkId}`, {
     method: 'DELETE',
+    headers: benchmarkActorHeaders(actor),
   })
 }
 
